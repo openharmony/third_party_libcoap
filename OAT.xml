@@ -60,11 +60,25 @@ Note:If the text contains special characters, please escape them according to th
                 <filteritem type="filename" name="COPYING" desc="We just use use BSD. getopt.c, OpenSSL, GnuTLS or tinyDTLS are not be used."/>
                 <filteritem type="filename" name="LICENSE" desc="We just use use BSD. getopt.c, OpenSSL, GnuTLS or tinyDTLS are not be used."/>
                 <filteritem type="filename" name="Makefile.am" desc="We not use this automake script file."/>
+                <filteritem type="filename" name="BUILDING" desc="无license头。该文件为构建说明文档。"/>
                 <filteritem type="filepath" name="m4/ac_check_cryptolibs.m4" desc="We do not need this file to check the version of GNUTLS|OPENSSL. Copying and distribution of this file, with or without modification, are permitted in any medium without royalty provided the copyright notice and this notice are preserved. This file is offered as-is, without any warranty."/>
                 <filteritem type="filepath" name="m4/ax_check_a2x_to_man.m4" desc="We do not need this file to check if have installed a2x or not. This file is part of the CoAP library libcoap, following BSD License."/>
                 <filteritem type="filepath" name="m4/ax_check_compile_flag.m4" desc="You need not follow the terms of the GPL when using or distributing Autoconf scripts. Futher more, we not use this Autoconf script file."/>
                 <filteritem type="filepath" name="m4/ax_check_link_flag.m4" desc="You need not follow the terms of the GPL when using or distributing Autoconf scripts. Futher more, we not use this Autoconf script file."/>
+                <filteritem type="filepath" name="doc/Doxyfile.in" desc="无license头。该文件为API文档生产脚本。"/>
             </filefilter>
         </filefilterlist>
+    <licensematcherlist>
+        <licensematcher name="BSD 2-Clause License" desc="如果工具扫描是InvalidLicense，可在此定义匹配规则，注意引号要转义" >
+            <licensetext name="
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+
+THIS SOFTWARE IS PROVIDED" desc="匹配此条目的为BSD 2-Clause License"/>
+        </licensematcher>
+    </licensematcherlist>
     </oatconfig>
 </configuration>
