@@ -79,6 +79,37 @@ modification, are permitted provided that the following conditions are met:
 
 THIS SOFTWARE IS PROVIDED" desc="匹配此条目的为BSD 2-Clause License"/>
         </licensematcher>
+        <licensematcher name="BSD 3-Clause License" desc="如果工具扫描是InvalidLicense，可在此定义匹配规则，注意引号要转义" >
+            <licensetext name="
+Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the Institute nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED" desc="匹配此条目的为BSD 3-Clause License"/>
+        </licensematcher>
+        <licensematcher name="BSD 3-Clause License" desc="如果工具扫描是InvalidLicense，可在此定义匹配规则，注意引号要转义" >
+            <licensetext name="
+Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED" desc="匹配此条目的为BSD 3-Clause License"/>
+        </licensematcher>
     </licensematcherlist>
     </oatconfig>
 </configuration>
