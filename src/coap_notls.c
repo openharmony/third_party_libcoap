@@ -8,6 +8,7 @@
 */
 
 #include "coap_internal.h"
+#include "coap_dtls.h"
 
 #if !defined(HAVE_LIBTINYDTLS) && !defined(HAVE_OPENSSL) && !defined(HAVE_LIBGNUTLS)
 
