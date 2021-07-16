@@ -716,7 +716,9 @@ coap_send_pdu(coap_session_t *session, coap_pdu_t *pdu, coap_queue_t *node) {
 
   coap_socket_t *sock = &session->sock;
   if (sock->flags == COAP_SOCKET_EMPTY) {
-    assert(session->endpoint != NULL);
+    if (session->endpoint == NULL) {
+      return COAP_INVALID_TID;
+    }
     sock = &session->endpoint->sock;
   }
   if (pdu->type == COAP_MESSAGE_CON && COAP_PROTO_NOT_RELIABLE(session->proto))
@@ -1407,7 +1409,8 @@ coap_read(coap_context_t *ctx, coap_tick_t now) {
 #else /* ! COAP_EPOLL_SUPPORT */
   coap_endpoint_t *ep, *tmp;
   coap_session_t *s, *rtmp;
-
+  int session_may_freed;
+  coap_session_type_t session_type;
   LL_FOREACH_SAFE(ctx->endpoint, ep, tmp) {
     if ((ep->sock.flags & COAP_SOCKET_CAN_READ) != 0)
       coap_read_endpoint(ctx, ep, now);
@@ -1416,13 +1419,19 @@ coap_read(coap_context_t *ctx, coap_tick_t now) {
     if ((ep->sock.flags & COAP_SOCKET_CAN_ACCEPT) != 0)
       coap_accept_endpoint(ctx, ep, now);
     SESSIONS_ITER_SAFE(ep->sessions, s, rtmp) {
+      session_may_freed = 0;
+      session_type = s->type;
       if ((s->sock.flags & COAP_SOCKET_CAN_READ) != 0) {
         /* Make sure the session object is not deleted in one of the callbacks  */
         coap_session_reference(s);
         coap_read_session(ctx, s, now);
+        if (s->ref == 1) {
+          session_may_freed = 1;
+        }
         coap_session_release(s);
       }
-      if ((s->sock.flags & COAP_SOCKET_CAN_WRITE) != 0) {
+      if (((session_type != COAP_SESSION_TYPE_CLIENT) || (session_may_freed == 0)) &&
+          (s->sock.flags & COAP_SOCKET_CAN_WRITE) != 0) {
         /* Make sure the session object is not deleted in one of the callbacks  */
         coap_session_reference(s);
         coap_write_session(ctx, s, now);
@@ -1432,19 +1441,29 @@ coap_read(coap_context_t *ctx, coap_tick_t now) {
   }
 
   SESSIONS_ITER_SAFE(ctx->sessions, s, rtmp) {
+    session_may_freed = 0;
+    session_type = s->type;
     if ((s->sock.flags & COAP_SOCKET_CAN_CONNECT) != 0) {
       /* Make sure the session object is not deleted in one of the callbacks  */
       coap_session_reference(s);
       coap_connect_session(ctx, s, now);
+      if (s->ref == 1) {
+        session_may_freed = 1;
+      }
       coap_session_release( s );
     }
-    if ((s->sock.flags & COAP_SOCKET_CAN_READ) != 0) {
+    if (((session_type != COAP_SESSION_TYPE_CLIENT) || (session_may_freed == 0)) &&
+        (s->sock.flags & COAP_SOCKET_CAN_READ) != 0) {
       /* Make sure the session object is not deleted in one of the callbacks  */
       coap_session_reference(s);
       coap_read_session(ctx, s, now);
+      if (s->ref == 1) {
+        session_may_freed = 1;
+      }
       coap_session_release(s);
     }
-    if ((s->sock.flags & COAP_SOCKET_CAN_WRITE) != 0) {
+    if (((session_type != COAP_SESSION_TYPE_CLIENT) || (session_may_freed == 0)) &&
+        (s->sock.flags & COAP_SOCKET_CAN_WRITE) != 0) {
       /* Make sure the session object is not deleted in one of the callbacks  */
       coap_session_reference(s);
       coap_write_session(ctx, s, now);
@@ -2325,7 +2344,9 @@ handle_response(coap_context_t *context, coap_session_t *session,
    * been lost, so we need to stop retransmitting requests with the
    * same token.
    */
-  coap_cancel_all_messages(context, session, rcvd->token, rcvd->token_length);
+  if (rcvd->token_length != 0) {
+    coap_cancel_all_messages(context, session, rcvd->token, rcvd->token_length);
+  }
 
   /* Call application-specific response handler when available. */
   if (context->response_handler) {

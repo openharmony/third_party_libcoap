@@ -462,7 +462,7 @@ void coap_session_disconnected(coap_session_t *session, coap_nack_reason_t reaso
   }
 }
 
-static int32_t loopback_packet_check(char *srcbuf) {
+static int32_t loopback_packet_check(const char *srcbuf) {
   const char addr_perface[] = "::ffff:";
   char tmpbuf[INET6_ADDRSTRLEN] = {0};
   int ret;

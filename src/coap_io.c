@@ -549,11 +549,11 @@ bind_to_device(int sockfd, const struct sockaddr_in *local_addr) {
   for (int i = 0; i < interface_num && i < COAP_INTERFACE_MAX; i++) {
     coap_log(LOG_DEBUG, "device name: %s\n", buf[i].ifr_name);
     if (ioctl(sockfd, SIOCGIFFLAGS, (char *)(&buf[i])) < 0) {
-      coap_log(LOG_ERR, "ioctl fail, errno = %d", errno);
+      coap_log(LOG_ERR, "ioctl fail, errno = %d\n", errno);
       return -1;
     }
     if (!((uint16_t)buf[i].ifr_flags & IFF_UP)) {
-      coap_log(LOG_ERR, "interface is not up");
+      coap_log(LOG_ERR, "interface is not up\n");
       continue;
     }
     /* get IP of this interface */
@@ -568,10 +568,10 @@ bind_to_device(int sockfd, const struct sockaddr_in *local_addr) {
       memset(&ifr, 0, sizeof(ifr));
       (void)strncpy(ifr.ifr_ifrn.ifrn_name, buf[i].ifr_name, sizeof(ifr.ifr_ifrn.ifrn_name) - 1);
       if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, (char *)&ifr, sizeof(ifr)) < 0) {
-        coap_log(LOG_ERR, "setsockopt fail, errno = %d", errno);
+        coap_log(LOG_ERR, "setsockopt fail, errno = %d\n", errno);
         return -1;
       }
-      coap_log(LOG_INFO, "binding interface %s success", buf[i].ifr_name);
+      coap_log(LOG_INFO, "binding interface %s success\n", buf[i].ifr_name);
       break;
     }
   }
@@ -1372,6 +1372,43 @@ coap_io_prepare_epoll(coap_context_t *ctx, coap_tick_t now) {
 }
 
 #if !defined(WITH_CONTIKI)
+#ifndef COAP_EPOLL_SUPPORT
+static void
+coap_updata_ep_sockets(coap_context_t *ctx,
+                       coap_socket_t *sockets[],
+                       unsigned int max_sockets,
+                       unsigned int *num_sockets)
+{
+  coap_endpoint_t *ep;
+  coap_session_t *s, *rtmp;
+
+  LL_FOREACH(ctx->endpoint, ep) {
+    if (ep->sock.flags & (COAP_SOCKET_WANT_READ | COAP_SOCKET_WANT_WRITE | COAP_SOCKET_WANT_ACCEPT)) {
+      sockets[(*num_sockets)++] = &ep->sock;
+      if (*num_sockets >= max_sockets) {
+        return;
+      }
+    }
+    SESSIONS_ITER_SAFE(ep->sessions, s, rtmp) {
+      if (s->sock.flags & (COAP_SOCKET_WANT_READ | COAP_SOCKET_WANT_WRITE)) {
+        sockets[(*num_sockets)++] = &s->sock;
+        if (*num_sockets >= max_sockets) {
+          return;
+        }
+      }
+    }
+  }
+
+  SESSIONS_ITER_SAFE(ctx->sessions, s, rtmp) {
+    if (s->sock.flags & (COAP_SOCKET_WANT_READ | COAP_SOCKET_WANT_WRITE | COAP_SOCKET_WANT_CONNECT)) {
+      sockets[(*num_sockets)++] = &s->sock;
+      if (*num_sockets >= max_sockets) {
+        return;
+      }
+    }
+  }
+}
+#endif /* ! COAP_EPOLL_SUPPORT */
 
 unsigned int
 coap_write(coap_context_t *ctx,
@@ -1401,12 +1438,6 @@ coap_write(coap_context_t *ctx,
     session_timeout = COAP_DEFAULT_SESSION_TIMEOUT * COAP_TICKS_PER_SECOND;
 
   LL_FOREACH(ctx->endpoint, ep) {
-#ifndef COAP_EPOLL_SUPPORT
-    if (ep->sock.flags & (COAP_SOCKET_WANT_READ | COAP_SOCKET_WANT_WRITE | COAP_SOCKET_WANT_ACCEPT)) {
-      if (*num_sockets < max_sockets)
-        sockets[(*num_sockets)++] = &ep->sock;
-    }
-#endif /* ! COAP_EPOLL_SUPPORT */
     SESSIONS_ITER_SAFE(ep->sessions, s, rtmp) {
       if (s->type == COAP_SESSION_TYPE_SERVER && s->ref == 0 &&
           s->delayqueue == NULL &&
@@ -1419,12 +1450,6 @@ coap_write(coap_context_t *ctx,
           if (timeout == 0 || s_timeout < timeout)
             timeout = s_timeout;
         }
-#ifndef COAP_EPOLL_SUPPORT
-        if (s->sock.flags & (COAP_SOCKET_WANT_READ | COAP_SOCKET_WANT_WRITE)) {
-          if (*num_sockets < max_sockets)
-            sockets[(*num_sockets)++] = &s->sock;
-        }
-#endif /* ! COAP_EPOLL_SUPPORT */
       }
     }
   }
@@ -1473,13 +1498,6 @@ coap_write(coap_context_t *ctx,
       if (timeout == 0 || s_timeout < timeout)
         timeout = s_timeout;
     }
-
-#ifndef COAP_EPOLL_SUPPORT
-    if (s->sock.flags & (COAP_SOCKET_WANT_READ | COAP_SOCKET_WANT_WRITE | COAP_SOCKET_WANT_CONNECT)) {
-      if (*num_sockets < max_sockets)
-        sockets[(*num_sockets)++] = &s->sock;
-    }
-#endif /* ! COAP_EPOLL_SUPPORT */
   }
 
   nextpdu = coap_peek_next(ctx);
@@ -1492,6 +1510,9 @@ coap_write(coap_context_t *ctx,
   if (nextpdu && (timeout == 0 || nextpdu->t - ( now - ctx->sendqueue_basetime ) < timeout))
     timeout = nextpdu->t - (now - ctx->sendqueue_basetime);
 
+#ifndef COAP_EPOLL_SUPPORT
+  coap_updata_ep_sockets(ctx, sockets, max_sockets,num_sockets);
+#endif /* ! COAP_EPOLL_SUPPORT */
   if (ctx->dtls_context) {
     if (coap_dtls_is_context_timeout()) {
       coap_tick_t tls_timeout = coap_dtls_get_context_timeout(ctx->dtls_context);
