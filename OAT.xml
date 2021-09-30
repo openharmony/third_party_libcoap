@@ -66,6 +66,7 @@ Note:If the text contains special characters, please escape them according to th
                 <filteritem type="filepath" name="m4/ax_check_compile_flag.m4" desc="You need not follow the terms of the GPL when using or distributing Autoconf scripts. Futher more, we not use this Autoconf script file."/>
                 <filteritem type="filepath" name="m4/ax_check_link_flag.m4" desc="You need not follow the terms of the GPL when using or distributing Autoconf scripts. Futher more, we not use this Autoconf script file."/>
                 <filteritem type="filepath" name="doc/Doxyfile.in" desc="无license头。该文件为API文档生产脚本。"/>
+                <filteritem type="filepath" name="AUTHORS" desc="无license头。该文件为作者名单列表信息。"/>
             </filefilter>
         </filefilterlist>
     <licensematcherlist>
