@@ -8,14 +8,10 @@ if (defined(ohos_lite)) {
     "-std=c99",
   ]
   cflags_cc = cflags
-  ldflags = [
-    "-fPIC",
-  ]
+  ldflags = [ "-fPIC" ]
   config("libcoap_config") {
     include_dirs = [ "include/coap2" ]
-    defines = [
-      "_GNU_SOURCE",
-    ]
+    defines = [ "_GNU_SOURCE" ]
   }
   source_set("libcoap_src") {
     sources = [
@@ -80,7 +76,7 @@ if (defined(ohos_lite)) {
       "src/str.c",
       "src/subscribe.c",
       "src/uri.c",
-   ]
+    ]
     configs = [ ":libcoap_config" ]
   }
 
@@ -93,7 +89,11 @@ if (defined(ohos_lite)) {
     deps = [ ":libcoap_src" ]
     public_configs = [ ":libcoap_config" ]
     subsystem_name = "communication"
-    defines = [ "STANDARD_SYSTEM_ENABLE" ]
-    part_name = "dsoftbus_standard"
+    if (defined(oem_commercial_build) && oem_commercial_build) {
+      part_name = "softbus"
+    } else {
+      defines = [ "STANDARD_SYSTEM_ENABLE" ]
+      part_name = "dsoftbus_standard"
+    }
   }
 }
