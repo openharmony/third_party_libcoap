@@ -21,7 +21,10 @@ if (defined(ohos_lite)) {
   cflags_cc = cflags
   ldflags = [ "-fPIC" ]
   config("libcoap_config") {
-    include_dirs = [ "include/coap2" ]
+    include_dirs = [
+      "include",
+      "//third_party/bounds_checking_function/include",
+    ]
     defines = [ "_GNU_SOURCE" ]
   }
   source_set("libcoap_src") {
@@ -29,14 +32,21 @@ if (defined(ohos_lite)) {
       "src/address.c",
       "src/async.c",
       "src/block.c",
+      "src/coap_asn1.c",
+      "src/coap_cache.c",
       "src/coap_debug.c",
       "src/coap_event.c",
+      "src/coap_gnutls.c",
       "src/coap_hashkey.c",
       "src/coap_io.c",
+      "src/coap_mbedtls.c",
       "src/coap_notls.c",
       "src/coap_openssl.c",
+      "src/coap_prng.c",
       "src/coap_session.c",
+      "src/coap_tcp.c",
       "src/coap_time.c",
+      "src/coap_tinydtls.c",
       "src/encode.c",
       "src/mem.c",
       "src/net.c",
@@ -62,7 +72,10 @@ if (defined(ohos_lite)) {
   import("//build/ohos.gni")
 
   config("libcoap_config") {
-    include_dirs = [ "include/coap2" ]
+    include_dirs = [
+      "include",
+      "//third_party/bounds_checking_function/include",
+    ]
   }
 
   ohos_source_set("libcoap_src") {
@@ -70,14 +83,21 @@ if (defined(ohos_lite)) {
       "src/address.c",
       "src/async.c",
       "src/block.c",
+      "src/coap_asn1.c",
+      "src/coap_cache.c",
       "src/coap_debug.c",
       "src/coap_event.c",
+      "src/coap_gnutls.c",
       "src/coap_hashkey.c",
       "src/coap_io.c",
+      "src/coap_mbedtls.c",
       "src/coap_notls.c",
       "src/coap_openssl.c",
+      "src/coap_prng.c",
       "src/coap_session.c",
+      "src/coap_tcp.c",
       "src/coap_time.c",
+      "src/coap_tinydtls.c",
       "src/encode.c",
       "src/mem.c",
       "src/net.c",
