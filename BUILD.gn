@@ -11,9 +11,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+cflags = [
+  "-DCOAP_SUPPORT_SOCKET_BROADCAST",
+  "-DCOAP_USER_DEFAULT_PORT=5684",
+]
+
 if (defined(ohos_lite)) {
   import("//build/lite/config/component/lite_component.gni")
-  cflags = [
+  cflags += [
     "-Wall",
     "-fPIC",
     "-std=c99",
@@ -60,16 +65,23 @@ if (defined(ohos_lite)) {
     configs += [ ":libcoap_config" ]
   }
   static_library("libcoap_static") {
-    deps = [ ":libcoap_src" ]
+    deps = [
+      ":libcoap_src",
+      "//third_party/bounds_checking_function:libsec_static",
+    ]
     public_configs = [ ":libcoap_config" ]
   }
 
   shared_library("libcoap") {
-    deps = [ ":libcoap_src" ]
+    deps = [
+      ":libcoap_src",
+      "//third_party/bounds_checking_function:libsec_shared",
+    ]
     public_configs = [ ":libcoap_config" ]
   }
 } else {
   import("//build/ohos.gni")
+  cflags_cc = cflags
 
   config("libcoap_config") {
     include_dirs = [
@@ -112,12 +124,18 @@ if (defined(ohos_lite)) {
   }
 
   ohos_static_library("libcoap_static") {
-    deps = [ ":libcoap_src" ]
+    deps = [
+      ":libcoap_src",
+      "//third_party/bounds_checking_function:libsec_static",
+    ]
     public_configs = [ ":libcoap_config" ]
   }
 
   ohos_shared_library("libcoap") {
-    deps = [ ":libcoap_src" ]
+    deps = [
+      ":libcoap_src",
+      "//third_party/bounds_checking_function:libsec_shared",
+    ]
     public_configs = [ ":libcoap_config" ]
     subsystem_name = "communication"
     if (defined(oem_commercial_build) && oem_commercial_build) {
