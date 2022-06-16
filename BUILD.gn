@@ -142,7 +142,7 @@ if (defined(ohos_lite)) {
       part_name = "softbus"
     } else {
       defines = [ "STANDARD_SYSTEM_ENABLE" ]
-      part_name = "dsoftbus_standard"
+      part_name = "dsoftbus"
     }
   }
 }
