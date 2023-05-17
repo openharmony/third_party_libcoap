@@ -138,6 +138,7 @@ if (defined(ohos_lite)) {
     ]
     public_configs = [ ":libcoap_config" ]
     subsystem_name = "communication"
+    innerapi_tags = [ "platformsdk_indirect" ]
     if (defined(oem_commercial_build) && oem_commercial_build) {
       part_name = "softbus"
     } else {
