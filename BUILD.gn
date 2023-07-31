@@ -137,13 +137,13 @@ if (defined(ohos_lite)) {
       "//third_party/bounds_checking_function:libsec_shared",
     ]
     public_configs = [ ":libcoap_config" ]
-    subsystem_name = "communication"
+    subsystem_name = "thirdparty"
     innerapi_tags = [ "platformsdk_indirect" ]
     if (defined(oem_commercial_build) && oem_commercial_build) {
-      part_name = "softbus"
+      part_name = "libcoap"
     } else {
       defines = [ "STANDARD_SYSTEM_ENABLE" ]
-      part_name = "dsoftbus"
+      part_name = "libcoap"
     }
   }
 }
