@@ -17,7 +17,6 @@
 #ifndef COAP_IO_INTERNAL_H_
 #define COAP_IO_INTERNAL_H_
 
-#include "coap_internal.h"
 #include <sys/types.h>
 
 #include "coap_address.h"
@@ -59,6 +58,7 @@ struct coap_socket_t {
 #define COAP_SOCKET_CAN_ACCEPT   0x0400  /**< non blocking server socket can now accept without blocking */
 #define COAP_SOCKET_CAN_CONNECT  0x0800  /**< non blocking client socket can now connect without blocking */
 #define COAP_SOCKET_MULTICAST    0x1000  /**< socket is used for multicast communication */
+#define COAP_SOCKET_BROADCAST    0x2000  /**< socket is used for broadcast communication */
 
 #if COAP_SERVER_SUPPORT
 coap_endpoint_t *coap_malloc_endpoint( void );

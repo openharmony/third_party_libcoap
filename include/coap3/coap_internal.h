@@ -77,4 +77,6 @@
 #include "coap_subscribe_internal.h"
 #include "coap_tcp_internal.h"
 
+#define COAP_INTERFACE_MAX 16
+
 #endif /* COAP_INTERNAL_H_ */

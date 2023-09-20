@@ -56,6 +56,10 @@ coap_address_set_port(coap_address_t *addr, uint16_t port) {
 
 #define _coap_is_mcast_impl(Address) ip_addr_ismulticast(&(Address)->addr)
 
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+#define _coap_is_bcast_impl(Address) ip_addr_isbroadcast(&(Address)->addr)
+#endif
+
 #elif defined(WITH_CONTIKI)
 
 #include "uip.h"
@@ -89,6 +93,10 @@ coap_address_set_port(coap_address_t *addr, uint16_t port) {
 #define _coap_address_isany_impl(A)  0
 
 #define _coap_is_mcast_impl(Address) uip_is_addr_mcast(&((Address)->addr))
+
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+#define _coap_is_bcast_impl(Address) (0)
+#endif
 
 #else /* WITH_LWIP || WITH_CONTIKI */
 
@@ -199,6 +207,15 @@ coap_address_isany(const coap_address_t *a) {
  * returns @c 1 if @p a is multicast, @c 0 otherwise.
  */
 int coap_is_mcast(const coap_address_t *a);
+
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+/**
+ * Checks if given address @p a denotes a broadcast address. This function
+ * returns @c 1 if @p a is broadcast, @c 0 otherwise.
+ */
+int coap_is_bcast(const coap_address_t *a);
+#endif
+
 #else /* !WITH_LWIP && !WITH_CONTIKI */
 /**
  * Checks if given address @p a denotes a multicast address. This function
@@ -208,6 +225,14 @@ COAP_STATIC_INLINE int
 coap_is_mcast(const coap_address_t *a) {
   return a && _coap_is_mcast_impl(a);
 }
+
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+COAP_STATIC_INLINE int
+coap_is_bcast(const coap_address_t *a) {
+  return a && _coap_is_bcast_impl(a);
+}
+#endif
+
 #endif /* !WITH_LWIP && !WITH_CONTIKI */
 
 #endif /* COAP_ADDRESS_H_ */

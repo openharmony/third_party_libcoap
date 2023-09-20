@@ -85,6 +85,23 @@ coap_address_equals(const coap_address_t *a, const coap_address_t *b) {
  return 0;
 }
 
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+int coap_is_bcast(const coap_address_t *a) {
+  if (a == NULL)
+    return 0;
+  switch(a->addr.sa.sa_family) {
+    case AF_INET:
+      if (a->addr.sin.sin_addr.s_addr == 0xFFFFFFFF)
+        return 1;
+      else
+        return 0;
+    case AF_INET6: /* broadcast not support IPV6 now */
+    default:
+      return 0;
+  }
+}
+#endif
+
 int coap_is_mcast(const coap_address_t *a) {
   if (!a)
     return 0;
