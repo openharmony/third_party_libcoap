@@ -479,6 +479,12 @@ int coap_context_get_coap_fd(const coap_context_t *context) {
 #endif /* ! COAP_EPOLL_SUPPORT */
 }
 
+coap_endpoint_t *coap_context_get_endpoint(const coap_context_t *context) {
+  if (context != NULL)
+    return context->endpoint;
+  return NULL;
+}
+
 coap_context_t *
 coap_new_context(
   const coap_address_t *listen_addr) {
@@ -1619,7 +1625,7 @@ coap_write_session(coap_context_t *ctx, coap_session_t *session, coap_tick_t now
   assert(session->sock.flags & COAP_SOCKET_CONNECTED);
 
   while (session->delayqueue) {
-    ssize_t bytes_written;
+    ssize_t bytes_written = 0;
     coap_queue_t *q = session->delayqueue;
     coap_log(LOG_DEBUG, "** %s: mid=0x%x: transmitted after delay\n",
              coap_session_str(session), (int)q->pdu->mid);
