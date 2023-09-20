@@ -154,6 +154,12 @@ _coap_address_isany_impl(const coap_address_t *a) {
  */
 void coap_address_init(coap_address_t *addr);
 
+/**
+ * Convert the given coap_address_t object @p addr from binary to text form.
+ * Write the result to the destination space @p dst of length @p len.
+ */
+void coap_address_ntop(const coap_address_t *addr, char *dst, int len);
+
 /* Convenience function to copy IPv6 addresses without garbage. */
 
 COAP_STATIC_INLINE void

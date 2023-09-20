@@ -130,3 +130,21 @@ void coap_address_init(coap_address_t *addr) {
 #endif
 }
 
+void coap_address_ntop(const coap_address_t *addr, char *dst, int len) {
+  if ((addr == NULL) || (dst == NULL) || (len < INET6_ADDRSTRLEN))
+    return;
+#if defined(WITH_LWIP)
+  (void)ipaddr_ntoa_r(&(addr->addr), dst, len);
+#elif defined(WITH_CONTIKI)
+  /* not supported yet */
+  coap_log(LOG_DEBUG, "coap_address_ntop: contiki not supported");
+#else
+  if (addr->addr.sa.sa_family == AF_INET) {
+    const void *addrptr = &addr->addr.sin.sin_addr;
+    (void)inet_ntop(addr->addr.sa.sa_family, addrptr, dst, len);
+  } else {
+    const void *addrptr = &addr->addr.sin6.sin6_addr;
+    (void)inet_ntop(addr->addr.sa.sa_family, addrptr, dst, len);
+  }
+#endif
+}

@@ -33,6 +33,15 @@
 #define PRIu32 "u"
 #endif /* ! HAVE_INTTYPES_H */
 
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <arpa/inet.h>
+#else
+#include <Iphlpapi.h>
+#endif /* !(_WIN32) */
+
 void
 coap_session_set_ack_timeout(coap_session_t *session, coap_fixed_point_t value) {
   if (value.integer_part > 0 && value.fractional_part < 1000) {
@@ -683,6 +692,128 @@ void coap_session_disconnected(coap_session_t *session, coap_nack_reason_t reaso
 #endif /* !COAP_DISABLE_TCP */
 }
 
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+#ifndef _WIN32
+static int32_t loopback_packet_check(const char *src_buf) {
+  const char addr_perface[] = "::ffff:";
+  char tmp_buf[INET6_ADDRSTRLEN] = {0};
+  int ret;
+  void *tmp_addr_ptr = NULL;
+  struct ifreq buf[COAP_INTERFACE_MAX];
+  struct ifconf ifc = {0};
+
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    coap_log(LOG_DEBUG, "socket() fail\n");
+    return 1;
+  }
+  ifc.ifc_len = sizeof(buf);
+  ifc.ifc_buf = (char *)buf;
+  if (ioctl(fd, SIOCGIFCONF, (char *)&ifc) < 0) {
+    coap_log(LOG_DEBUG, "ioctl fail, errno = %d\n", errno);
+    goto L_IS_LOOPBACK;
+  }
+  int interface_num = ifc.ifc_len / sizeof(struct ifreq);
+  for (int i = 0; i < interface_num && i < COAP_INTERFACE_MAX; i++) {
+    coap_log(LOG_DEBUG, "interface name: %s\n", buf[i].ifr_name);
+    /* get IP of this interface */
+    if (ioctl(fd, SIOCGIFADDR, (char *)&buf[i]) < 0) {
+      coap_log(LOG_DEBUG, "ioctl fail, errno = %d\n", errno);
+      goto L_IS_LOOPBACK;
+    }
+    tmp_addr_ptr = &((struct sockaddr_in *)&(buf[i].ifr_addr))->sin_addr;
+    inet_ntop(AF_INET, tmp_addr_ptr, tmp_buf, INET_ADDRSTRLEN);
+    if (memcmp(src_buf, addr_perface, strlen(addr_perface)) == 0 &&
+        strlen(src_buf) == strlen(tmp_buf) + strlen(addr_perface)) {
+      ret = memcmp(src_buf + strlen(addr_perface), tmp_buf, strlen(src_buf) - strlen(addr_perface));
+    } else {
+      if (strlen(src_buf) == strlen(tmp_buf)) {
+        ret = memcmp(src_buf, tmp_buf, strlen(src_buf));
+      } else {
+        ret = 1;
+      }
+    }
+    if (ret == 0) {
+      goto L_IS_LOOPBACK;
+    }
+  }
+  close(fd);
+  return 0;
+L_IS_LOOPBACK:
+  close(fd);
+  return 1;
+}
+#else
+static int loopback_packet_compare_ip(const char *src_buf, const char *addr_perface, const char *tmp_buf) {
+  int ret;
+  if (memcmp(src_buf, addr_perface, strlen(addr_perface)) == 0 &&
+    strlen(src_buf) == strlen(tmp_buf) + strlen(addr_perface)) {
+    ret = memcmp(src_buf + strlen(addr_perface), tmp_buf, strlen(src_buf) - strlen(addr_perface));
+  } else {
+    if (strlen(src_buf) == strlen(tmp_buf)) {
+      ret = memcmp(src_buf, tmp_buf, strlen(src_buf));
+    } else {
+      ret = 1;
+    }
+  }
+  return ret;
+}
+
+static int32_t loopback_packet_check(const char *src_buf) {
+  const char addr_perface[] = "::ffff:";
+  char tmp_buf[INET6_ADDRSTRLEN] = { 0 };
+  int ret;
+  IP_ADAPTER_INFO *adapter_info = NULL;
+  IP_ADAPTER_INFO *adapter = NULL;
+  ULONG adapter_info_len = sizeof(IP_ADAPTER_INFO);
+  adapter_info = (IP_ADAPTER_INFO *)malloc(adapter_info_len);
+  if (adapter_info == NULL) {
+    coap_log(LOG_ERR, "adapter_info malloc failed\n");
+    return 1;
+  }
+  if (GetAdaptersInfo(adapter_info, &adapter_info_len) == ERROR_BUFFER_OVERFLOW) {
+    free(adapter_info);
+    adapter_info = (IP_ADAPTER_INFO *)malloc(adapter_info_len);
+    if (adapter_info == NULL) {
+      coap_log(LOG_ERR, "adapter_info malloc failed\n");
+      return 1;
+    }
+  }
+  int32_t err = GetAdaptersInfo(adapter_info, &adapter_info_len);
+  if (err != NO_ERROR) {
+    coap_log(LOG_ERR, "GetAdaptersInfo failed with error: %d\n", err);
+    goto L_IS_LOOPBACK;
+  }
+  adapter = adapter_info;
+  while (adapter != NULL) {
+    PIP_ADDR_STRING pip_addr = &adapter->IpAddressList;
+    while (pip_addr != NULL) {
+      if (strcpy_s(tmp_buf, INET6_ADDRSTRLEN, pip_addr->IpAddress.String) != 0) {
+        goto L_IS_LOOPBACK;
+      }
+      ret = loopback_packet_compare_ip(src_buf, addr_perface, tmp_buf);
+      if (ret == 0) {
+        goto L_IS_LOOPBACK;
+      }
+      pip_addr = pip_addr->Next;
+    }
+    adapter = adapter->Next;
+  }
+  free(adapter_info);
+  return 0;
+L_IS_LOOPBACK:
+  free(adapter_info);
+  return 1;
+}
+#endif /* END OF _WIN32 */
+
+static int32_t is_loopback_packet(const coap_packet_t *packet) {
+  char src_buf[INET6_ADDRSTRLEN] = {0};
+  coap_address_ntop(&(packet->addr_info.remote), src_buf, INET6_ADDRSTRLEN);
+  return loopback_packet_check(src_buf);
+}
+#endif /* END OF COAP_SUPPORT_SOCKET_BROADCAST */
+
 #if COAP_SERVER_SUPPORT
 static void
 coap_make_addr_hash(coap_addr_hash_t *addr_hash, coap_proto_t proto,
@@ -703,7 +834,12 @@ coap_endpoint_get_session(coap_endpoint_t *endpoint,
   coap_session_t *oldest = NULL;
   coap_session_t *oldest_hs = NULL;
   coap_addr_hash_t addr_hash;
-
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+  if (is_loopback_packet(packet) == 1) {
+    coap_log(LOG_DEBUG, "coap_endpoint_get_session: drop loopback packet");
+    return NULL;
+  }
+#endif
   coap_make_addr_hash(&addr_hash, endpoint->proto, &packet->addr_info);
   SESSIONS_FIND(endpoint->sessions, addr_hash, session);
   if (session) {

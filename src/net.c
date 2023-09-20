@@ -3072,6 +3072,9 @@ handle_response(coap_context_t *context, coap_session_t *session,
    * been lost, so we need to stop retransmitting requests with the
    * same token.
    */
+  if (rcvd->token_length != 0)
+    coap_cancel_all_messages(context, session, rcvd->token, rcvd->token_length);
+
   if (rcvd->type != COAP_MESSAGE_ACK)
     coap_cancel_all_messages(context, session, rcvd->token, rcvd->token_length);
 
