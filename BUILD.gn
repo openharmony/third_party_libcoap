@@ -1,104 +1,93 @@
-# Copyright (c) 2023 Huawei Device Co., Ltd.
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 cflags = [
-    "-DCOAP_SUPPORT_SOCKET_BROADCAST",
-    "-DCOAP_USER_DEFAULT_PORT=5684",
-    "-Wall",
-    "-fPIC",
+  "-DCOAP_SUPPORT_SOCKET_BROADCAST",
+  "-DCOAP_USER_DEFAULT_PORT=5684",
+  "-Wall",
+  "-fPIC",
 ]
 
 cflags_cc = cflags
 
 config("libcoap_config") {
-    include_dirs = [
-        "include",
-        "//third_party/bounds_checking_function/include",
-    ]
-    if (defined(ohos_lite)) {
-        defines = [ "_GNU_SOURCE" ]
-    }
+  include_dirs = [
+    "include",
+    "//third_party/bounds_checking_function/include",
+  ]
+  if (defined(ohos_lite)) {
+    defines = [ "_GNU_SOURCE" ]
+  }
 }
 
 src = [
-    "src/coap_address.c",
-    "src/coap_async.c",
-    "src/block.c",
-    "src/coap_asn1.c",
-    "src/coap_cache.c",
-    "src/coap_debug.c",
-    "src/coap_event.c",
-    "src/coap_hashkey.c",
-    "src/coap_io.c",
-    "src/coap_notls.c",
-    "src/coap_prng.c",
-    "src/coap_session.c",
-    "src/coap_tcp.c",
-    "src/coap_time.c",
-    "src/encode.c",
-    "src/mem.c",
-    "src/net.c",
-    "src/coap_option.c",
-    "src/pdu.c",
-    "src/resource.c",
-    "src/str.c",
-    "src/coap_subscribe.c",
-    "src/uri.c",
+  "src/coap_address.c",
+  "src/coap_async.c",
+  "src/block.c",
+  "src/coap_asn1.c",
+  "src/coap_cache.c",
+  "src/coap_debug.c",
+  "src/coap_event.c",
+  "src/coap_hashkey.c",
+  "src/coap_io.c",
+  "src/coap_notls.c",
+  "src/coap_prng.c",
+  "src/coap_session.c",
+  "src/coap_tcp.c",
+  "src/coap_time.c",
+  "src/encode.c",
+  "src/mem.c",
+  "src/net.c",
+  "src/coap_option.c",
+  "src/pdu.c",
+  "src/resource.c",
+  "src/str.c",
+  "src/coap_subscribe.c",
+  "src/uri.c",
 ]
 
 source_set("libcoap_src") {
-    sources = src
-    configs += [ ":libcoap_config" ]
+  sources = src
+  configs += [ ":libcoap_config" ]
 }
 
 deps_with_static = [
-    ":libcoap_src",
-    "//third_party/bounds_checking_function:libsec_static",
+  ":libcoap_src",
+  "//third_party/bounds_checking_function:libsec_static",
 ]
 
 deps_with_shared = [
-    ":libcoap_src",
-    "//third_party/bounds_checking_function:libsec_shared",
+  ":libcoap_src",
+  "//third_party/bounds_checking_function:libsec_shared",
 ]
 
 if (defined(ohos_lite)) {
-    import("//build/lite/config/component/lite_component.gni")
+  print("[libcoap build] in ohos_lite branch")  # check position
+  import("//build/lite/config/component/lite_component.gni")
 
-    static_library("libcoap_static") {
-        deps = deps_with_static
-        public_configs = [ ":libcoap_config" ]
-    }
+  static_library("libcoap_static") {
+    deps = deps_with_static
+    public_configs = [ ":libcoap_config" ]
+  }
 
-    shared_library("libcoap") {
-        deps = deps_with_shared
-        public_configs = [ ":libcoap_config" ]
-    }
+  shared_library("libcoap") {
+    deps = deps_with_shared
+    public_configs = [ ":libcoap_config" ]
+  }
 } else {
-    import("//build/ohos.gni")
+  print("[libcoap build] in other branch")  # check position
+  import("//build/ohos.gni")
 
-    ohos_static_library("libcoap_static") {
-        deps = deps_with_static
-        public_configs = [ ":libcoap_config" ]
-    }
+  ohos_static_library("libcoap_static") {
+    deps = deps_with_static
+    public_configs = [ ":libcoap_config" ]
+  }
 
-    ohos_shared_library("libcoap") {
-        deps = deps_with_shared
-        public_configs = [ ":libcoap_config" ]
-        subsystem_name = "thirdparty"
-        innerapi_tags = [ "platformsdk_indirect" ]
-        if (!defined(oem_commercial_build) || !oem_commercial_build) {
-            defines = [ "STANDARD_SYSTEM_ENABLE" ]
-        }
-        part_name = "libcoap"
+  ohos_shared_library("libcoap") {
+    deps = deps_with_shared
+    public_configs = [ ":libcoap_config" ]
+    subsystem_name = "thirdparty"
+    innerapi_tags = [ "platformsdk_indirect" ]
+    if (!defined(oem_commercial_build) || !oem_commercial_build) {
+      defines = [ "STANDARD_SYSTEM_ENABLE" ]
     }
+    part_name = "libcoap"
+  }
 }
