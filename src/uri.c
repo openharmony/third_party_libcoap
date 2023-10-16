@@ -8,6 +8,11 @@
  * README for terms of use.
  */
 
+/**
+ * @file uri.c
+ * @brief URI handling functions
+ */
+
 #include "coap3/coap_internal.h"
 
 #if defined(HAVE_LIMITS_H)
@@ -56,7 +61,7 @@ coap_split_uri_sub(const uint8_t *str_var,
   int is_http_proxy_scheme = 0;
   size_t keep_len = len;
 
-  if (!str_var || !uri)
+  if (!str_var || !uri || len == 0)
     return -1;
 
   memset(uri, 0, sizeof(coap_uri_t));
@@ -610,6 +615,21 @@ coap_string_t *coap_get_uri_path(const coap_pdu_t *request) {
   coap_string_t *uri_path = NULL;
   size_t length = 0;
   static const uint8_t hex[] = "0123456789ABCDEF";
+
+  q = coap_check_option(request, COAP_OPTION_PROXY_URI, &opt_iter);
+  if (q) {
+    coap_uri_t uri;
+
+    if (coap_split_proxy_uri(coap_opt_value(q),
+                             coap_opt_length(q), &uri) < 0) {
+      return NULL;
+    }
+    uri_path = coap_new_string(uri.path.length);
+    if (uri_path) {
+      memcpy(uri_path->s, uri.path.s, uri.path.length);
+    }
+    return uri_path;
+  }
 
   coap_option_filter_clear(&f);
   coap_option_filter_set(&f, COAP_OPTION_URI_PATH);

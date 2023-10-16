@@ -4,6 +4,9 @@
 /* Define if building universal (internal helper macro) */
 /* #undef AC_APPLE_UNIVERSAL_BUILD */
 
+/* Define if libcoap supports client mode code */
+#define COAP_CLIENT_SUPPORT 1
+
 /* Define if the system has small stack size */
 /* #undef COAP_CONSTRAINED_STACK */
 
@@ -12,6 +15,9 @@
 
 /* Define if the system has epoll support */
 /* #undef COAP_EPOLL_SUPPORT */
+
+/* Define if libcoap supports server mode code */
+#define COAP_SERVER_SUPPORT 1
 
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #define HAVE_ARPA_INET_H 1
@@ -68,7 +74,7 @@
 #define HAVE_NET_IF_H 1
 
 /* Define if the system has libssl1.1 */
-/* #undef HAVE_OPENSSL */
+/* #undef HAVE_OPENSSL 1 */
 
 /* Define to 1 if you have the <pthread.h> header file. */
 #define HAVE_PTHREAD_H 1
@@ -146,7 +152,7 @@
 #define PACKAGE_NAME "libcoap"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "libcoap 4.3.0"
+#define PACKAGE_STRING "libcoap 4.3.1"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "libcoap"
@@ -155,7 +161,7 @@
 #define PACKAGE_URL "https://libcoap.net/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "4.3.0"
+#define PACKAGE_VERSION "4.3.1"
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1

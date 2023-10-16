@@ -1,7 +1,7 @@
 /*
- * address.h -- representation of network addresses
+ * coap_address.h -- representation of network addresses
  *
- * Copyright (C) 2010-2011,2015-2016 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2011,2015-2016,2022 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -10,7 +10,7 @@
  */
 
 /**
- * @file address.h
+ * @file coap_address.h
  * @brief Representation of network addresses
  */
 
@@ -154,6 +154,10 @@ _coap_address_isany_impl(const coap_address_t *a) {
  */
 void coap_address_init(coap_address_t *addr);
 
+/**
+ * Convert the given coap_address_t object @p addr from binary to text form.
+ * Write the result to the destination space @p dst of length @p len.
+ */
 void coap_address_ntop(const coap_address_t *addr, char *dst, int len);
 
 /* Convenience function to copy IPv6 addresses without garbage. */
@@ -211,6 +215,10 @@ coap_address_isany(const coap_address_t *a) {
 int coap_is_mcast(const coap_address_t *a);
 
 #ifdef COAP_SUPPORT_SOCKET_BROADCAST
+/**
+ * Checks if given address @p a denotes a broadcast address. This function
+ * returns @c 1 if @p a is broadcast, @c 0 otherwise.
+ */
 int coap_is_bcast(const coap_address_t *a);
 #endif
 

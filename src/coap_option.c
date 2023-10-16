@@ -1,7 +1,7 @@
 /*
- * option.c -- helpers for handling options in CoAP PDUs
+ * coap_option.c -- helpers for handling options in CoAP PDUs
  *
- * Copyright (C) 2010-2013 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2013,2022 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -9,6 +9,10 @@
  * README for terms of use.
  */
 
+/**
+ * @file coap_option.c
+ * @brief CoAP option handling functions
+ */
 
 #include "coap3/coap_internal.h"
 
@@ -112,13 +116,10 @@ coap_opt_iterator_t *
 coap_option_iterator_init(const coap_pdu_t *pdu, coap_opt_iterator_t *oi,
                           const coap_opt_filter_t *filter) {
   assert(pdu);
+  assert(pdu->token);
   assert(oi);
 
   memset(oi, 0, sizeof(coap_opt_iterator_t));
-  if (pdu->token == NULL) {
-    oi->bad = 1;
-    return NULL;
-  }
 
   oi->next_option = pdu->token + pdu->token_length;
   if (pdu->token + pdu->used_size <= oi->next_option) {
@@ -553,11 +554,16 @@ coap_add_optlist_pdu(coap_pdu_t *pdu, coap_optlist_t** options) {
   coap_optlist_t *opt;
 
   if (options && *options) {
+    if (pdu->data) {
+      coap_log(LOG_WARNING,
+               "coap_add_optlist_pdu: PDU already contains data\n");
+      return 0;
+    }
     /* sort options for delta encoding */
     LL_SORT((*options), order_opts);
 
     LL_FOREACH((*options), opt) {
-      coap_add_option(pdu, opt->number, opt->length, opt->data);
+      coap_add_option_internal(pdu, opt->number, opt->length, opt->data);
     }
     return 1;
   }

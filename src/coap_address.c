@@ -1,11 +1,16 @@
-/* address.c -- representation of network addresses
+/* coap_address.c -- representation of network addresses
  *
- * Copyright (C) 2015-2016,2019 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2015-2016,2019-2022 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
  * This file is part of the CoAP library libcoap. Please see
  * README for terms of use.
+ */
+
+/**
+ * @file coap_address.c
+ * @brief Handling of network addresses
  */
 
 #include "coap3/coap_internal.h"
@@ -82,20 +87,15 @@ coap_address_equals(const coap_address_t *a, const coap_address_t *b) {
 
 #ifdef COAP_SUPPORT_SOCKET_BROADCAST
 int coap_is_bcast(const coap_address_t *a) {
-  if (a == NULL) {
+  if (a == NULL)
     return 0;
-  }
-
-  switch (a->addr.sa.sa_family) {
+  switch(a->addr.sa.sa_family) {
     case AF_INET:
-      if (a->addr.sin.sin_addr.s_addr == 0xFFFFFFFF) {
+      if (a->addr.sin.sin_addr.s_addr == 0xFFFFFFFF)
         return 1;
-      } else {
+      else
         return 0;
-      }
-    case AF_INET6:
-      /* not support ipv6 */
-      return 0;
+    case AF_INET6: /* broadcast not support IPV6 now */
     default:
       return 0;
   }
@@ -131,13 +131,13 @@ void coap_address_init(coap_address_t *addr) {
 }
 
 void coap_address_ntop(const coap_address_t *addr, char *dst, int len) {
-  if ((addr == NULL) || (dst == NULL) || (len < INET6_ADDRSTRLEN)) {
+  if ((addr == NULL) || (dst == NULL) || (len < INET6_ADDRSTRLEN))
     return;
-  }
 #if defined(WITH_LWIP)
   (void)ipaddr_ntoa_r(&(addr->addr), dst, len);
 #elif defined(WITH_CONTIKI)
   /* not supported yet */
+  coap_log(LOG_DEBUG, "coap_address_ntop: contiki not supported");
 #else
   if (addr->addr.sa.sa_family == AF_INET) {
     const void *addrptr = &addr->addr.sin.sin_addr;

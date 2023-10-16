@@ -1,12 +1,17 @@
 /*
- * net.h -- CoAP network interface
+ * net.h -- CoAP context interface
  *
- * Copyright (C) 2010-2021 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2022 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
  * This file is part of the CoAP library libcoap. Please see README for terms
  * of use.
+ */
+
+/**
+ * @file net.h
+ * @brief CoAP context interface
  */
 
 #ifndef COAP_NET_H_
@@ -15,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #ifndef _WIN32
+#include <sys/select.h>
 #include <sys/time.h>
 #endif
 #include <time.h>
@@ -30,8 +36,9 @@
 #include "coap_session.h"
 
 /**
+ * @ingroup application_api
  * @defgroup context Context Handling
- * API functions for handling PDUs using CoAP Contexts
+ * API for handling PDUs using CoAP Contexts
  * @{
  */
 
@@ -236,6 +243,15 @@ void coap_context_set_keepalive(coap_context_t *context, unsigned int seconds);
 int coap_context_get_coap_fd(const coap_context_t *context);
 
 /**
+ * Get listening endpoints
+ *
+ * @param context The coap_context_t object.
+ *
+ * @return listening endpoint list.
+ */
+coap_endpoint_t *coap_context_get_endpoint(const coap_context_t *context);
+
+/**
  * Set the maximum idle sessions count. The number of server sessions that
  * are currently not in use. If this number is exceeded, the least recently
  * used server session is completely removed.
@@ -301,6 +317,26 @@ coap_context_set_csm_timeout(coap_context_t *context,
  */
 unsigned int
 coap_context_get_csm_timeout(const coap_context_t *context);
+
+/**
+ * Set the CSM max session size value. The largest PDU that can be received.
+ *
+ * @param context    The coap_context_t object.
+ * @param csm_max_message_size The CSM max message size value.
+ */
+void
+coap_context_set_csm_max_message_size(coap_context_t *context,
+                                      uint32_t csm_max_message_size);
+
+/**
+ * Get the CSM max session size  value
+ *
+ * @param context The coap_context_t object.
+ *
+ * @return The CSM max session size  value.
+ */
+uint32_t
+coap_context_get_csm_max_message_size(const coap_context_t *context);
 
 /**
  * Set the maximum number of sessions in (D)TLS handshake value. If this number
@@ -456,7 +492,7 @@ coap_send_rst(coap_session_t *session, const coap_pdu_t *request) {
 /**
 * Sends a CoAP message to given peer. The memory that is
 * allocated for the pdu will be released by coap_send().
-* The caller must not use the pdu after calling coap_send().
+* The caller must not use or delete the pdu after calling coap_send().
 *
 * @param session         The CoAP session.
 * @param pdu             The CoAP PDU to send.
@@ -483,7 +519,14 @@ int coap_handle_event(coap_context_t *context,
                       coap_session_t *session);
 /**
  * Returns 1 if there are no messages to send or to dispatch in the context's
- * queues. */
+ * queues.
+ *
+ * @param context The CoAP context to check.
+ *
+ * @return @c 0 if there are still pending transmits else @c 1 if nothing
+ *         queued for transmission.  Note that @c 0 does not mean there has
+ *         been a response to a transmitted request.
+ */
 int coap_can_exit(coap_context_t *context);
 
 /**
@@ -514,7 +557,7 @@ coap_join_mcast_group_intf(coap_context_t *ctx, const char *groupname,
  * Function interface for defining the hop count (ttl) for sending
  * multicast traffic
  *
- * @param session The current contexsion.
+ * @param session The current session.
  * @param hops    The number of hops (ttl) to use before the multicast
  *                packet expires.
  *
@@ -523,11 +566,22 @@ coap_join_mcast_group_intf(coap_context_t *ctx, const char *groupname,
 int
 coap_mcast_set_hops(coap_session_t *session, size_t hops);
 
+/**
+ * Function interface to enable processing mcast requests on a per resource
+ * basis.  This then enables a set of configuration flags set up when
+ * configuring the resources (coap_resource_init()).
+ *
+ * @param context The current context.
+ */
+void
+coap_mcast_per_resource(coap_context_t *context);
+
 /**@}*/
 
 /**
+ * @ingroup application_api
  * @defgroup app_io Application I/O Handling
- * API functions for Application Input / Output
+ * API for Application Input / Output checking
  * @{
  */
 
@@ -600,8 +654,9 @@ int coap_io_process_with_fds(coap_context_t *ctx, uint32_t timeout_ms,
 /**@}*/
 
 /**
- * @defgroup app_io_internal Application I/O Handling (Internal)
- * Internal API functions for Application Input / Output
+ * @ingroup internal_api
+ * @defgroup app_io_internal Application I/O Handling
+ * Internal API for Application Input / Output checking
  * @{
  */
 
@@ -700,15 +755,6 @@ struct epoll_event;
  */
 void coap_io_do_epoll(coap_context_t *ctx, struct epoll_event* events,
                       size_t nevents);
-
-/**
- * Get listening endpoints
- *
- * @param ctx The current CoAP context.
- *
- * @return listening endpoint list.
- */
-coap_endpoint_t *coap_get_endpoint(const coap_context_t *ctx);
 
 /**@}*/
 

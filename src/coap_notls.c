@@ -1,16 +1,21 @@
 /*
-* coap_notls.c -- Stub Datagram Transport Layer Support for libcoap
-*
-* Copyright (C) 2016 Olaf Bergmann <bergmann@tzi.org>
-*
+ * coap_notls.c -- Stub Datagram Transport Layer Support for libcoap
+ *
+ * Copyright (C) 2016      Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2021-2022 Jon Shallow <supjps-libcoap@jpshallow.com>
+ *
  * SPDX-License-Identifier: BSD-2-Clause
  *
-* This file is part of the CoAP library libcoap. Please see README for terms
-* of use.
-*/
+ * This file is part of the CoAP library libcoap. Please see README for terms
+ * of use.
+ */
+
+/**
+ * @file coap_notls.c
+ * @brief NoTLS specific interface functions
+ */
 
 #include "coap3/coap_internal.h"
-#include "coap3/coap_dtls.h"
 
 #if !defined(HAVE_LIBTINYDTLS) && !defined(HAVE_OPENSSL) && !defined(HAVE_LIBGNUTLS) && !defined(HAVE_MBEDTLS)
 
@@ -48,19 +53,23 @@ coap_dtls_context_set_pki_root_cas(coap_context_t *ctx COAP_UNUSED,
   return 0;
 }
 
+#if COAP_CLIENT_SUPPORT
 int
 coap_dtls_context_set_cpsk(coap_context_t *ctx COAP_UNUSED,
                           coap_dtls_cpsk_t* setup_data COAP_UNUSED
 ) {
   return 0;
 }
+#endif /* COAP_CLIENT_SUPPORT */
 
+#if COAP_SERVER_SUPPORT
 int
 coap_dtls_context_set_spsk(coap_context_t *ctx COAP_UNUSED,
                           coap_dtls_spsk_t* setup_data COAP_UNUSED
 ) {
   return 0;
 }
+#endif /* COAP_SERVER_SUPPORT */
 
 int
 coap_dtls_context_check_keys_enabled(coap_context_t *ctx COAP_UNUSED)
@@ -103,13 +112,17 @@ void
 coap_dtls_free_context(void *handle COAP_UNUSED) {
 }
 
+#if COAP_SERVER_SUPPORT
 void *coap_dtls_new_server_session(coap_session_t *session COAP_UNUSED) {
   return NULL;
 }
+#endif /* COAP_SERVER_SUPPORT */
 
+#if COAP_CLIENT_SUPPORT
 void *coap_dtls_new_client_session(coap_session_t *session COAP_UNUSED) {
   return NULL;
 }
+#endif /* COAP_CLIENT_SUPPORT */
 
 void coap_dtls_free_session(coap_session_t *coap_session COAP_UNUSED) {
 }
@@ -138,7 +151,13 @@ coap_dtls_get_timeout(coap_session_t *session COAP_UNUSED, coap_tick_t now COAP_
   return 0;
 }
 
-void coap_dtls_handle_timeout(coap_session_t *session COAP_UNUSED) {
+/*
+ * return 1 timed out
+ *        0 still timing out
+ */
+int
+coap_dtls_handle_timeout(coap_session_t *session COAP_UNUSED) {
+  return 0;
 }
 
 int
@@ -149,6 +168,7 @@ coap_dtls_receive(coap_session_t *session COAP_UNUSED,
   return -1;
 }
 
+#if COAP_SERVER_SUPPORT
 int
 coap_dtls_hello(coap_session_t *session COAP_UNUSED,
   const uint8_t *data COAP_UNUSED,
@@ -156,18 +176,23 @@ coap_dtls_hello(coap_session_t *session COAP_UNUSED,
 ) {
   return 0;
 }
+#endif /* COAP_SERVER_SUPPORT */
 
 unsigned int coap_dtls_get_overhead(coap_session_t *session COAP_UNUSED) {
   return 0;
 }
 
+#if COAP_CLIENT_SUPPORT
 void *coap_tls_new_client_session(coap_session_t *session COAP_UNUSED, int *connected COAP_UNUSED) {
   return NULL;
 }
+#endif /* COAP_CLIENT_SUPPORT */
 
+#if COAP_SERVER_SUPPORT
 void *coap_tls_new_server_session(coap_session_t *session COAP_UNUSED, int *connected COAP_UNUSED) {
   return NULL;
 }
+#endif /* COAP_SERVER_SUPPORT */
 
 void coap_tls_free_session(coap_session_t *coap_session COAP_UNUSED) {
 }
@@ -186,6 +211,7 @@ ssize_t coap_tls_read(coap_session_t *session COAP_UNUSED,
   return -1;
 }
 
+#if COAP_SERVER_SUPPORT
 typedef struct coap_local_hash_t {
   size_t ofs;
   coap_key_t key[8];   /* 32 bytes in total */
@@ -229,6 +255,7 @@ coap_digest_final(coap_digest_ctx_t *digest_ctx,
   coap_digest_free(digest_ctx);
   return 1;
 }
+#endif /* COAP_SERVER_SUPPORT */
 
 #else /* !HAVE_LIBTINYDTLS && !HAVE_OPENSSL && !HAVE_LIBGNUTLS */
 
