@@ -249,6 +249,15 @@ void coap_context_set_max_token_size(coap_context_t *context,
 int coap_context_get_coap_fd(const coap_context_t *context);
 
 /**
+ * Get listening endpoints
+ *
+ * @param context The coap_context_t object.
+ *
+ * @return listening endpoint list.
+ */
+coap_endpoint_t *coap_context_get_endpoint(const coap_context_t *context);
+
+/**
  * Set the maximum idle sessions count. The number of server sessions that
  * are currently not in use. If this number is exceeded, the least recently
  * used server session is completely removed.

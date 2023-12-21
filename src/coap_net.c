@@ -460,6 +460,13 @@ coap_context_get_coap_fd(const coap_context_t *context) {
 #endif /* ! COAP_EPOLL_SUPPORT */
 }
 
+coap_endpoint_t *
+coap_context_get_endpoint(const coap_context_t *context) {
+  if (context != NULL)
+    return context->endpoint;
+  return NULL;
+}
+
 coap_context_t *
 coap_new_context(const coap_address_t *listen_addr) {
   coap_context_t *c;
