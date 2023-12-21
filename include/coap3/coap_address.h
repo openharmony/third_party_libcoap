@@ -211,6 +211,12 @@ void coap_free_address_info(coap_addr_info_t *info_list);
 void coap_address_init(coap_address_t *addr);
 
 /**
+ * Convert the given coap_address_t object @p addr from binary to text form.
+ * Write the result to the destination space @p dst of length @p len.
+ */
+void coap_address_ntop(const coap_address_t *addr, char *dst, int len);
+
+/**
  * Copy the parsed unix domain host into coap_address_t structure
  * translating %2F into / on the way. All other fields set as appropriate.
  *

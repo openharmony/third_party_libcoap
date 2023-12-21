@@ -1403,6 +1403,9 @@ coap_pdu_parse(coap_proto_t proto,
 
 size_t
 coap_pdu_encode_header(coap_pdu_t *pdu, coap_proto_t proto) {
+  if (pdu == NULL || pdu->token == NULL)
+    return 0;
+
   uint8_t e_token_length;
 
   if (pdu->actual_token.length < COAP_TOKEN_EXT_1B_BIAS) {
