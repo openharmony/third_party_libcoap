@@ -34,7 +34,11 @@
  * @{
  */
 
-#define COAP_DEFAULT_PORT      5683 /* CoAP default UDP/TCP port */
+ #ifndef COAP_USER_DEFAULT_PORT
+ #define COAP_USER_DEFAULT_PORT 5683 /* CoAP default UDP/TCP port */
+ #endif
+ #define COAP_DEFAULT_PORT COAP_USER_DEFAULT_PORT
+
 #define COAPS_DEFAULT_PORT     5684 /* CoAP default UDP/TCP port for secure transmission */
 #define COAP_DEFAULT_MAX_AGE     60 /* default maximum object lifetime in seconds */
 #ifndef COAP_DEFAULT_MTU
