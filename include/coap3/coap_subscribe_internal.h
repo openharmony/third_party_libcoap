@@ -2,7 +2,7 @@
  * coap_subscribe_internal.h -- Structures, Enums & Functions that are not
  * exposed to application programming
  *
- * Copyright (C) 2010-2022 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -76,10 +76,9 @@ void coap_subscription_init(coap_subscription_t *);
  * @param session The session that the observe notify failed on.
  * @param token The token used when the observe notify failed.
  */
-void
-coap_handle_failed_notify(coap_context_t *context,
-                          coap_session_t *session,
-                          const coap_binary_t *token);
+void coap_handle_failed_notify(coap_context_t *context,
+                               coap_session_t *session,
+                               const coap_bin_const_t *token);
 
 /**
  * Checks all known resources to see if they are dirty and then notifies
@@ -105,7 +104,7 @@ void coap_check_notify(coap_context_t *context);
  */
 coap_subscription_t *coap_add_observer(coap_resource_t *resource,
                                        coap_session_t *session,
-                                       const coap_binary_t *token,
+                                       const coap_bin_const_t *token,
                                        const coap_pdu_t *pdu);
 
 /**
@@ -119,7 +118,7 @@ coap_subscription_t *coap_add_observer(coap_resource_t *resource,
  */
 coap_subscription_t *coap_find_observer(coap_resource_t *resource,
                                         coap_session_t *session,
-                                        const coap_binary_t *token);
+                                        const coap_bin_const_t *token);
 
 /**
  * Flags that data is ready to be sent to observers.
@@ -131,7 +130,7 @@ coap_subscription_t *coap_find_observer(coap_resource_t *resource,
  */
 void coap_touch_observer(coap_context_t *context,
                          coap_session_t *session,
-                         const coap_binary_t *token);
+                         const coap_bin_const_t *token);
 
 /**
  * Removes any subscription for @p observer from @p resource and releases the
@@ -146,7 +145,7 @@ void coap_touch_observer(coap_context_t *context,
  */
 int coap_delete_observer(coap_resource_t *resource,
                          coap_session_t *session,
-                         const coap_binary_t *token);
+                         const coap_bin_const_t *token);
 
 /**
  * Removes any subscription for @p session and releases the allocated storage.
@@ -155,6 +154,13 @@ int coap_delete_observer(coap_resource_t *resource,
  * @param session  The observer's session.
  */
 void coap_delete_observers(coap_context_t *context, coap_session_t *session);
+
+/**
+ * Close down persist tracking, releasing any memory used.
+ *
+ * @param context The current CoAP context.
+ */
+void coap_persist_cleanup(coap_context_t *context);
 
 /** @} */
 

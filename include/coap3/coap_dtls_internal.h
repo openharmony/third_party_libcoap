@@ -27,7 +27,7 @@
  * @{
  */
 
-/* https://tools.ietf.org/html/rfc6347#section-4.2.4.1 */
+/* https://rfc-editor.org/rfc/rfc6347#section-4.2.4.1 */
 #ifndef COAP_DTLS_RETRANSMIT_MS
 #define COAP_DTLS_RETRANSMIT_MS 1000
 #endif
@@ -37,6 +37,11 @@
 
 #define COAP_DTLS_RETRANSMIT_COAP_TICKS (COAP_DTLS_RETRANSMIT_MS * COAP_TICKS_PER_SECOND / 1000)
 
+/* For RFC9146 Connection ID support */
+#ifndef COAP_DTLS_CID_LENGTH
+#define COAP_DTLS_CID_LENGTH 6
+#endif
+
 /**
  * Creates a new DTLS context for the given @p coap_context. This function
  * returns a pointer to a new DTLS context object or @c NULL on error.
@@ -45,8 +50,7 @@
  *
  * @return A DTLS context object or @c NULL on error.
  */
-void *
-coap_dtls_new_context(coap_context_t *coap_context);
+void *coap_dtls_new_context(coap_context_t *coap_context);
 
 #if COAP_SERVER_SUPPORT
 /**
@@ -60,9 +64,8 @@ coap_dtls_new_context(coap_context_t *coap_context);
  * @return @c 1 if successful, else @c 0.
  */
 
-int
-coap_dtls_context_set_spsk(coap_context_t *coap_context,
-                          coap_dtls_spsk_t *setup_data);
+int coap_dtls_context_set_spsk(coap_context_t *coap_context,
+                               coap_dtls_spsk_t *setup_data);
 #endif /* COAP_SERVER_SUPPORT */
 
 #if COAP_CLIENT_SUPPORT
@@ -77,9 +80,8 @@ coap_dtls_context_set_spsk(coap_context_t *coap_context,
  * @return @c 1 if successful, else @c 0.
  */
 
-int
-coap_dtls_context_set_cpsk(coap_context_t *coap_context,
-                          coap_dtls_cpsk_t *setup_data);
+int coap_dtls_context_set_cpsk(coap_context_t *coap_context,
+                               coap_dtls_cpsk_t *setup_data);
 #endif /* COAP_CLIENT_SUPPORT */
 
 /**
@@ -99,10 +101,9 @@ coap_dtls_context_set_cpsk(coap_context_t *coap_context,
  * @return @c 1 if successful, else @c 0.
  */
 
-int
-coap_dtls_context_set_pki(coap_context_t *coap_context,
-                          const coap_dtls_pki_t *setup_data,
-                          const coap_dtls_role_t role);
+int coap_dtls_context_set_pki(coap_context_t *coap_context,
+                              const coap_dtls_pki_t *setup_data,
+                              const coap_dtls_role_t role);
 
 /**
  * Set the dtls context's default Root CA information for a client or server.
@@ -116,10 +117,9 @@ coap_dtls_context_set_pki(coap_context_t *coap_context,
  * @return @c 1 if successful, else @c 0.
  */
 
-int
-coap_dtls_context_set_pki_root_cas(coap_context_t *coap_context,
-                                   const char *ca_file,
-                                   const char *ca_dir);
+int coap_dtls_context_set_pki_root_cas(coap_context_t *coap_context,
+                                       const char *ca_file,
+                                       const char *ca_dir);
 
 /**
  * Check whether one of the coap_dtls_context_set_{psk|pki}() functions have
@@ -192,9 +192,9 @@ void coap_dtls_session_update_mtu(coap_session_t *coap_session);
  * @return @c 0 if this would be blocking, @c -1 if there is an error or the
  *         number of cleartext bytes sent.
  */
-int coap_dtls_send(coap_session_t *coap_session,
-                   const uint8_t *data,
-                   size_t data_len);
+ssize_t coap_dtls_send(coap_session_t *coap_session,
+                       const uint8_t *data,
+                       size_t data_len);
 
 /**
  * Check if timeout is handled per CoAP session or per CoAP context.
@@ -266,6 +266,27 @@ int coap_dtls_hello(coap_session_t *coap_session,
 #endif /* COAP_SERVER_SUPPORT */
 
 /**
+ * Layer function interface for layer below DTLS connect being
+ * established.
+ *
+ * If this layer is properly established on invocation, then the next layer
+ * must get called by calling
+ *   session->lfunc[COAP_LAYER_TLS].establish(session)
+ * (or done at any point when DTLS is established).
+ *
+ * @param session Session that the lower layer connect was done on.
+ *
+ */
+void coap_dtls_establish(coap_session_t *session);
+
+/**
+ * Layer function interface for DTLS close for a session.
+ *
+ * @param session  Session to do the DTLS close on.
+ */
+void coap_dtls_close(coap_session_t *session);
+
+/**
  * Get DTLS overhead over cleartext PDUs.
  *
  * @param coap_session The CoAP session.
@@ -279,13 +300,11 @@ unsigned int coap_dtls_get_overhead(coap_session_t *coap_session);
  * Create a new TLS client-side session.
  *
  * @param coap_session The CoAP session.
- * @param connected Updated with whether the connection is connected yet or not.
- *                  @c 0 is not connected, @c 1 is connected.
  *
  * @return Opaque handle to underlying TLS library object containing security
  *         parameters for the session.
 */
-void *coap_tls_new_client_session(coap_session_t *coap_session, int *connected);
+void *coap_tls_new_client_session(coap_session_t *coap_session);
 #endif /* COAP_CLIENT_SUPPORT */
 
 #if COAP_SERVER_SUPPORT
@@ -293,13 +312,11 @@ void *coap_tls_new_client_session(coap_session_t *coap_session, int *connected);
  * Create a TLS new server-side session.
  *
  * @param coap_session The CoAP session.
- * @param connected Updated with whether the connection is connected yet or not.
- *                  @c 0 is not connected, @c 1 is connected.
  *
  * @return Opaque handle to underlying TLS library object containing security
  *         parameters for the session.
  */
-void *coap_tls_new_server_session(coap_session_t *coap_session, int *connected);
+void *coap_tls_new_server_session(coap_session_t *coap_session);
 #endif /* COAP_SERVER_SUPPORT */
 
 /**
@@ -308,7 +325,7 @@ void *coap_tls_new_server_session(coap_session_t *coap_session, int *connected);
  *
  * @param coap_session The CoAP session.
  */
-void coap_tls_free_session( coap_session_t *coap_session );
+void coap_tls_free_session(coap_session_t *coap_session);
 
 /**
  * Send data to a TLS peer, with implicit flush.
@@ -323,7 +340,7 @@ void coap_tls_free_session( coap_session_t *coap_session );
 ssize_t coap_tls_write(coap_session_t *coap_session,
                        const uint8_t *data,
                        size_t data_len
-                       );
+                      );
 
 /**
  * Read some data from a TLS peer.
@@ -338,7 +355,28 @@ ssize_t coap_tls_write(coap_session_t *coap_session,
 ssize_t coap_tls_read(coap_session_t *coap_session,
                       uint8_t *data,
                       size_t data_len
-                      );
+                     );
+
+/**
+ * Layer function interface for layer below TLS accept/connect being
+ *  established. This function initiates an accept/connect at the TLS layer.
+ *
+ * If this layer is properly established on invocation, then the next layer
+ * must get called by calling
+ *   session->lfunc[COAP_LAYER_TLS].establish(session)
+ * (or done at any point when TLS is established).
+ *
+ * @param session Session that the lower layer accept/connect was done on.
+ *
+ */
+void coap_tls_establish(coap_session_t *session);
+
+/**
+ * Layer function interface for TLS close for a session.
+ *
+ * @param session  Session to do the TLS close on.
+ */
+void coap_tls_close(coap_session_t *session);
 
 /**
  * Get the current client's PSK key.
@@ -348,7 +386,7 @@ ssize_t coap_tls_read(coap_session_t *coap_session,
  * @return          @c NULL if no key, else a pointer the current key.
  */
 const coap_bin_const_t *coap_get_session_client_psk_key(
-                                           const coap_session_t *coap_session);
+    const coap_session_t *coap_session);
 
 /**
  * Get the current client's PSK identity.
@@ -358,7 +396,7 @@ const coap_bin_const_t *coap_get_session_client_psk_key(
  * @return          @c NULL if no identity, else a pointer the current identity.
  */
 const coap_bin_const_t *coap_get_session_client_psk_identity(
-                                           const coap_session_t *coap_session);
+    const coap_session_t *coap_session);
 
 /**
  * Get the current server's PSK key.
@@ -368,7 +406,7 @@ const coap_bin_const_t *coap_get_session_client_psk_identity(
  * @return          @c NULL if no key, else a pointer the current key.
  */
 const coap_bin_const_t *coap_get_session_server_psk_key(
-                                           const coap_session_t *coap_session);
+    const coap_session_t *coap_session);
 
 /**
  * Get the current server's PSK identity hint.
@@ -378,7 +416,7 @@ const coap_bin_const_t *coap_get_session_server_psk_key(
  * @return          @c NULL if no hint, else a pointer the current hint.
  */
 const coap_bin_const_t *coap_get_session_server_psk_hint(
-                                           const coap_session_t *coap_session);
+    const coap_session_t *coap_session);
 
 /**
  * Initialize the underlying (D)TLS Library layer.

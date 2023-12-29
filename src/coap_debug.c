@@ -1,6 +1,6 @@
 /* coap_debug.c -- debug utilities
  *
- * Copyright (C) 2010--2012,2014--2022 Olaf Bergmann <bergmann@tzi.org> and others
+ * Copyright (C) 2010--2012,2014--2023 Olaf Bergmann <bergmann@tzi.org> and others
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -41,25 +41,40 @@
 #endif
 
 #ifdef WITH_CONTIKI
-# ifndef DEBUG
-#  define DEBUG DEBUG_PRINT
-# endif /* DEBUG */
-#include "net/ip/uip-debug.h"
-#endif
+# define fprintf(fd, ...) { (void)fd; printf(__VA_ARGS__); }
+# define fflush(...)
+# define vfprintf(fd, ...) { (void)fd; printf(__VA_ARGS__); }
 
-static coap_log_t maxlog = LOG_WARNING;        /* default maximum log level */
+# ifndef LOG_CONF_LEVEL_COAP
+#  define LOG_CONF_LEVEL_COAP 2 /* = LOG_LEVEL_WARN */
+# endif
+static coap_log_t maxlog = LOG_CONF_LEVEL_COAP == 0 ? /* = LOG_LEVEL_NONE */
+                           COAP_LOG_EMERG :
+                           (LOG_CONF_LEVEL_COAP == 1 ?  /* = LOG_LEVEL_ERR */
+                            COAP_LOG_ERR :
+                            (LOG_CONF_LEVEL_COAP == 2 ?  /* = LOG_LEVEL_WARN */
+                             COAP_LOG_WARN :
+                             (LOG_CONF_LEVEL_COAP == 3 ? /* = LOG_LEVEL_INFO */
+                              COAP_LOG_INFO :
+                              COAP_LOG_DEBUG)));
+#else /* WITH_CONTIKI */
+static coap_log_t maxlog = COAP_LOG_WARN;  /* default maximum CoAP log level */
+#endif /* WITH_CONTIKI */
 
 static int use_fprintf_for_show_pdu = 1; /* non zero to output with fprintf */
 
-const char *coap_package_name(void) {
+const char *
+coap_package_name(void) {
   return PACKAGE_NAME;
 }
 
-const char *coap_package_version(void) {
+const char *
+coap_package_version(void) {
   return PACKAGE_STRING;
 }
 
-const char *coap_package_build(void) {
+const char *
+coap_package_build(void) {
 #ifdef LIBCOAP_PACKAGE_BUILD
   return LIBCOAP_PACKAGE_BUILD;
 #else /* !LIBCOAP_PACKAGE_BUILD */
@@ -79,13 +94,26 @@ coap_get_log_level(void) {
 
 void
 coap_set_log_level(coap_log_t level) {
+  if (level > COAP_MAX_LOGGING_LEVEL)
+    level = COAP_MAX_LOGGING_LEVEL;
   maxlog = level;
 }
 
-/* this array has the same order as the type log_t */
+/* this array has the same order as the type coap_log_t with the (D)TLS
+   entries added to the list with a COAP_LOG_DTLS_BASE offset */
 static const char *loglevels[] = {
-  "EMRG", "ALRT", "CRIT", "ERR ", "WARN", "NOTE", "INFO", "DEBG", "????", "CIPH"
+  /* General logging */
+  "EMRG", "ALRT", "CRIT", "ERR ", "WARN", "NOTE", "INFO", "DEBG", "OSC ",
+  /* (D)TLS logging */
+  "Emrg", "Alrt", "Crit", "Err ", "Warn", "Note", "Info", "Debg"
 };
+
+#ifdef WITH_CONTIKI
+void
+coap_print_contiki_prefix(coap_log_t level) {
+  printf("[%s: COAP      ] ", loglevels[level]);
+}
+#endif /* WITH_CONTIKI */
 
 #ifdef HAVE_TIME_H
 
@@ -98,7 +126,7 @@ print_timestamp(char *s, size_t len, coap_tick_t t) {
   lensofar = strftime(s, len, "%b %d %H:%M:%S", tmp);
   if (len > lensofar + 4) {
     lensofar += snprintf(&s[lensofar], len-lensofar, ".%03u",
-             (unsigned int)((coap_ticks_to_rt_us(t) % 1000000)/1000));
+                         (unsigned int)((coap_ticks_to_rt_us(t) % 1000000)/1000));
   }
   return lensofar;
 }
@@ -119,7 +147,7 @@ print_timestamp(char *s, size_t len, coap_tick_t t) {
 
 #endif /* HAVE_TIME_H */
 
-#ifndef HAVE_STRNLEN
+#if !defined(HAVE_STRNLEN) && !defined(__MINGW32__)
 /**
  * A length-safe strlen() fake.
  *
@@ -131,15 +159,15 @@ print_timestamp(char *s, size_t len, coap_tick_t t) {
 static inline size_t
 strnlen(const char *s, size_t maxlen) {
   size_t n = 0;
-  while(*s++ && n < maxlen)
+  while (*s++ && n < maxlen)
     ++n;
   return n;
 }
-#endif /* HAVE_STRNLEN */
+#endif /* HAVE_STRNLEN && !__MINGW32__ */
 
 static size_t
-print_readable( const uint8_t *data, size_t len,
-                unsigned char *result, size_t buflen, int encode_always ) {
+print_readable(const uint8_t *data, size_t len,
+               unsigned char *result, size_t buflen, int encode_always) {
   const uint8_t hex[] = "0123456789ABCDEF";
   size_t cnt = 0;
   assert(data || len == 0);
@@ -151,8 +179,8 @@ print_readable( const uint8_t *data, size_t len,
   while (len) {
     if (!encode_always && isprint(*data)) {
       if (cnt+1 < buflen) { /* keep one byte for terminating zero */
-      *result++ = *data;
-      ++cnt;
+        *result++ = *data;
+        ++cnt;
       } else {
         break;
       }
@@ -167,7 +195,8 @@ print_readable( const uint8_t *data, size_t len,
         break;
     }
 
-    ++data; --len;
+    ++data;
+    --len;
   }
 
   *result = '\0'; /* add a terminating zero */
@@ -178,6 +207,9 @@ print_readable( const uint8_t *data, size_t len,
 #define min(a,b) ((a) < (b) ? (a) : (b))
 #endif
 
+#ifndef INET6_ADDRSTRLEN
+#define INET6_ADDRSTRLEN 46
+#endif
 /*
  * Returned buf is always NULL terminated.
  * Returned size is number of characters, not including NULL terminator.
@@ -185,76 +217,206 @@ print_readable( const uint8_t *data, size_t len,
 size_t
 coap_print_addr(const coap_address_t *addr, unsigned char *buf, size_t len) {
 #if defined( HAVE_ARPA_INET_H ) || defined( HAVE_WS2TCPIP_H )
-  const void *addrptr = NULL;
-  in_port_t port;
-  unsigned char *p = buf;
-  size_t need_buf;
+  char scratch[INET6_ADDRSTRLEN];
 
   assert(buf);
   assert(len);
   buf[0] = '\000';
 
   switch (addr->addr.sa.sa_family) {
+#if COAP_IPV4_SUPPORT
   case AF_INET:
-    if (len < INET_ADDRSTRLEN + 1) /* Include : */
-      return 0;
-    addrptr = &addr->addr.sin.sin_addr;
-    port = ntohs(addr->addr.sin.sin_port);
-    need_buf = INET_ADDRSTRLEN;
+    snprintf((char *)buf, len, "%s:%d",
+             coap_print_ip_addr(addr, scratch, sizeof(scratch)),
+             coap_address_get_port(addr));
     break;
+#endif /* COAP_IPV4_SUPPORT */
+#if COAP_IPV6_SUPPORT
   case AF_INET6:
-    if (len < INET6_ADDRSTRLEN + 3) /* Include [ ] : */
-      return 0;
-
-    *p++ = '[';
-
-    addrptr = &addr->addr.sin6.sin6_addr;
-    port = ntohs(addr->addr.sin6.sin6_port);
-    need_buf = INET6_ADDRSTRLEN;
-
+    snprintf((char *)buf, len, "[%s]:%d",
+             coap_print_ip_addr(addr, scratch, sizeof(scratch)),
+             coap_address_get_port(addr));
     break;
+#endif /* COAP_IPV6_SUPPORT */
+#if COAP_AF_UNIX_SUPPORT
+  case AF_UNIX:
+    snprintf((char *)buf, len, "'%s'", addr->addr.cun.sun_path);
+    break;
+#endif /* COAP_AF_UNIX_SUPPORT */
   default:
     /* Include trailing NULL if possible */
     memcpy(buf, "(unknown address type)", min(22+1, len));
     buf[len-1] = '\000';
-    return min(22, len);
+    break;
   }
-
-  /* Cast needed for Windows, since it doesn't have the correct API signature. */
-  if (inet_ntop(addr->addr.sa.sa_family, addrptr, (char *)p,
-                min(len, need_buf)) == 0) {
-    perror("coap_print_addr");
-    buf[0] = '\000';
-    return 0;
-  }
-
-  p += strlen((char *)p);
-
-  if (addr->addr.sa.sa_family == AF_INET6) {
-    if (p + 1 < buf + len) {
-      *p++ = ']';
-    } else
-      return p - buf; /* Already NULL terminated */
-  }
-
-  /* Cannot rely on snprintf() return value for short buffers */
-  snprintf((char *)p, buf + len - p, ":%d", port);
-
   return strlen((char *)buf);
+
 #else /* HAVE_ARPA_INET_H */
+
 # if WITH_CONTIKI
+
+  char scratch[INET6_ADDRSTRLEN];
+#ifdef HAVE_SNPRINTF
+
+  snprintf((char *)buf, len, "[%s]:%d",
+           coap_print_ip_addr(addr, scratch, sizeof(scratch)),
+           coap_address_get_port(addr));
+  return strlen((char *)buf);
+#else /* HAVE_SNPRINTF */
   unsigned char *p = buf;
-  uint8_t i;
 #  if NETSTACK_CONF_WITH_IPV6
-  const uint8_t hex[] = "0123456789ABCDEF";
 
   assert(buf);
   assert(len);
   buf[0] = '\000';
-  if (len < 42)
+  if (len < 40 + 2 + 6)
     return 0;
 
   *p++ = '[';
+  memcpy(p, coap_print_ip_addr(addr, scratch, sizeof(scratch)), 40);
+  p += 40 - 1;
+  *p++ = ']';
+#  else /* WITH_UIP6 */
+#   warning "IPv4 network addresses will not be included in debug output"
+
+  if (len < 21) {
+    *p = '\000';
+    return 0;
+  }
+#  endif /* WITH_UIP6 */
+
+  *p++ = ':';
+  *p++ = '0' + (coap_address_get_port(addr) / 10000) % 10;
+  *p++ = '0' + (coap_address_get_port(addr) / 1000) % 10;
+  *p++ = '0' + (coap_address_get_port(addr) / 100) % 10;
+  *p++ = '0' + (coap_address_get_port(addr) / 10) % 10;
+  *p++ = '0' + coap_address_get_port(addr) % 10;
+  *p = '\000';
+
+  return strlen((char *)buf);
+#endif /* HAVE_SNPRINTF */
+
+# elif WITH_LWIP
+
+  char scratch[INET6_ADDRSTRLEN];
+#ifdef HAVE_SNPRINTF
+
+  snprintf((char *)buf, len, "[%s]:%d",
+           coap_print_ip_addr(addr, scratch, sizeof(scratch)),
+           addr->port);
+  return strlen((char *)buf);
+#else /* HAVE_SNPRINTF */
+  unsigned char *p = buf;
+
+  assert(buf);
+  assert(len);
+  buf[0] = '\000';
+
+  switch (IP_GET_TYPE(addr->addr)) {
+  case IPADDR_TYPE_V4:
+    if (len < IP4ADDR_STRLEN_MAX + 6)
+      return 0;
+    memcpy(buf, coap_print_ip_addr(addr, scratch, sizeof(scratch)), IP4ADDR_STRLEN_MAX);
+    p += strlen((char *)buf);
+    break;
+#if LWIP_IPV6
+  case IPADDR_TYPE_V6:
+  case IPADDR_TYPE_ANY:
+    if (len < 40 + 2 + 6)
+      return 0;
+    *p++ = '[';
+    memcpy(p, coap_print_ip_addr(addr, scratch, sizeof(scratch)), 40);
+    p += strlen((char *)buf);
+    *p++ = ']';
+    break;
+#endif /* LWIP_IPV6 */
+  }
+
+  *p++ = ':';
+  *p++ = '0' + (addr->port / 10000) % 10;
+  *p++ = '0' + (addr->port / 1000) % 10;
+  *p++ = '0' + (addr->port / 100) % 10;
+  *p++ = '0' + (addr->port / 10) % 10;
+  *p++ = '0' + addr->port % 10;
+  *p = '\000';
+
+  return strlen((char *)buf);
+#endif /* HAVE_SNPRINTF */
+
+# else /* ! WITH_CONTIKI && ! WITH_LWIP */
+
+  (void)addr;
+  (void)len;
+
+  /* TODO: output addresses manually */
+#   warning "inet_ntop() not available, network addresses will not be included in debug output"
+# endif /* ! WITH_CONTIKI  && ! WITH_LWIP */
+  buf[0] = '\000';
+  return 0;
+#endif
+}
+
+/*
+ * Returned buf is always NULL terminated with as much as possible of the
+ * IP address filled in.
+ */
+const char *
+coap_print_ip_addr(const coap_address_t *addr, char *buf, size_t len) {
+#if defined( HAVE_ARPA_INET_H ) || defined( HAVE_WS2TCPIP_H )
+  const void *addrptr = NULL;
+
+  assert(buf);
+  assert(len);
+  buf[0] = '\000';
+
+  switch (addr->addr.sa.sa_family) {
+#if COAP_IPV4_SUPPORT
+  case AF_INET:
+    if (len < INET_ADDRSTRLEN)
+      return buf;
+    addrptr = &addr->addr.sin.sin_addr;
+    break;
+#endif /* COAP_IPV4_SUPPORT */
+#if COAP_IPV6_SUPPORT
+  case AF_INET6:
+    if (len < INET6_ADDRSTRLEN)
+      return buf;
+    addrptr = &addr->addr.sin6.sin6_addr;
+    break;
+#endif /* COAP_IPV6_SUPPORT */
+#if COAP_AF_UNIX_SUPPORT
+  case AF_UNIX:
+    snprintf(buf, len, "'%s'", addr->addr.cun.sun_path);
+    return buf;
+#endif /* COAP_AF_UNIX_SUPPORT */
+  default:
+    /* Include trailing NULL if possible */
+    memcpy(buf, "(unknown address type)", min(22+1, len));
+    buf[len-1] = '\000';
+    return buf;
+  }
+
+  /* Cast needed for Windows, since it doesn't have the correct API signature. */
+  if (inet_ntop(addr->addr.sa.sa_family, addrptr, (char *)buf, len) == 0) {
+    coap_log_err("coap_print_ip_addr: inet_ntop\n");
+    buf[0] = '\000';
+    return buf;
+  }
+  return buf;
+
+#else /* HAVE_ARPA_INET_H */
+
+# if WITH_CONTIKI
+  char *p = buf;
+  uint8_t i;
+#  if NETSTACK_CONF_WITH_IPV6
+  const char hex[] = "0123456789ABCDEF";
+
+  assert(buf);
+  assert(len);
+  buf[0] = '\000';
+  if (len < 40)
+    return 0;
 
   for (i=0; i < 16; i += 2) {
     if (i) {
@@ -265,48 +427,57 @@ coap_print_addr(const coap_address_t *addr, unsigned char *buf, size_t len) {
     *p++ = hex[(addr->addr.u8[i+1] & 0xf0) >> 4];
     *p++ = hex[(addr->addr.u8[i+1] & 0x0f)];
   }
-  *p++ = ']';
+  *p = '\000';
 #  else /* WITH_UIP6 */
 #   warning "IPv4 network addresses will not be included in debug output"
 
   if (len < 21) {
-    *p = '\000';
-    return 0;
+    return buf;
   }
 #  endif /* WITH_UIP6 */
-  if (buf + len - p < 6) {
-    *p = '\000';
-    return p - buf;
+  return buf;
+
+# elif WITH_LWIP
+
+  assert(buf);
+  assert(len);
+  buf[0] = '\000';
+
+  switch (IP_GET_TYPE(&addr->addr)) {
+#if LWIP_IPV4
+  case IPADDR_TYPE_V4:
+    if (len < IP4ADDR_STRLEN_MAX)
+      return buf;
+    memcpy(buf, ip4addr_ntoa(ip_2_ip4(&addr->addr)), IP4ADDR_STRLEN_MAX);
+    break;
+#endif /* LWIP_IPV4 */
+#if LWIP_IPV6
+  case IPADDR_TYPE_V6:
+  case IPADDR_TYPE_ANY:
+    if (len < 40)
+      return buf;
+#if LWIP_IPV4
+    memcpy(buf, ip6addr_ntoa(&addr->addr.u_addr.ip6), 40);
+#else /* LWIP_IPV4 */
+    memcpy(buf, ip6addr_ntoa(&addr->addr), 40);
+#endif /* LWIP_IPV4 */
+    break;
+#endif /* LWIP_IPV6 */
   }
+  return buf;
 
-#ifdef HAVE_SNPRINTF
-  /* Cannot rely on snprintf() return value for short buffers */
-  snprintf((char *)p, buf + len - p, ":%d", uip_htons(addr->port));
-#else /* HAVE_SNPRINTF */
-  /* @todo manual conversion of port number */
-  *p = '\000';
-#endif /* HAVE_SNPRINTF */
+# else /* ! WITH_CONTIKI && ! WITH_LWIP */
 
-  return strlen((char *)p);
-# else /* WITH_CONTIKI */
+  (void)addr;
+  (void)len;
+
   /* TODO: output addresses manually */
 #   warning "inet_ntop() not available, network addresses will not be included in debug output"
 # endif /* WITH_CONTIKI */
   buf[0] = '\000';
-  return 0;
+  return buf;
 #endif
 }
-
-#ifdef WITH_CONTIKI
-# define fprintf(fd, ...) { (void)fd; PRINTF(__VA_ARGS__); }
-# define fflush(...)
-
-# ifdef HAVE_VPRINTF
-#  define vfprintf(fd, ...) { (void)fd; vprintf(__VA_ARGS__); }
-# else /* HAVE_VPRINTF */
-#  define vfprintf(fd, ...) { (void)fd; PRINTF(__VA_ARGS__); }
-# endif /* HAVE_VPRINTF */
-#endif /* WITH_CONTIKI */
 
 /** Returns a textual description of the message type @p t. */
 static const char *
@@ -320,9 +491,11 @@ msg_type_string(uint16_t t) {
 static const char *
 msg_code_string(uint16_t c) {
   static const char *methods[] = { "0.00", "GET", "POST", "PUT", "DELETE",
-                                   "FETCH", "PATCH", "iPATCH" };
+                                   "FETCH", "PATCH", "iPATCH"
+                                 };
   static const char *signals[] = { "7.00", "CSM", "Ping", "Pong", "Release",
-                                   "Abort" };
+                                   "Abort"
+                                 };
   static char buf[5];
 
   if (c < sizeof(methods)/sizeof(const char *)) {
@@ -351,6 +524,7 @@ msg_option_string(uint8_t code, uint16_t option_type) {
     { COAP_OPTION_OBSERVE, "Observe" },
     { COAP_OPTION_URI_PORT, "Uri-Port" },
     { COAP_OPTION_LOCATION_PATH, "Location-Path" },
+    { COAP_OPTION_OSCORE, "Oscore" },
     { COAP_OPTION_URI_PATH, "Uri-Path" },
     { COAP_OPTION_CONTENT_FORMAT, "Content-Format" },
     { COAP_OPTION_MAXAGE, "Max-Age" },
@@ -366,12 +540,15 @@ msg_option_string(uint8_t code, uint16_t option_type) {
     { COAP_OPTION_SIZE1, "Size1" },
     { COAP_OPTION_ECHO, "Echo" },
     { COAP_OPTION_NORESPONSE, "No-Response" },
-    { COAP_OPTION_RTAG, "Request-Tag" }
+    { COAP_OPTION_RTAG, "Request-Tag" },
+    { COAP_OPTION_Q_BLOCK1, "Q-Block1" },
+    { COAP_OPTION_Q_BLOCK2, "Q-Block2" }
   };
 
   static struct option_desc_t options_csm[] = {
     { COAP_SIGNALING_OPTION_MAX_MESSAGE_SIZE, "Max-Message-Size" },
-    { COAP_SIGNALING_OPTION_BLOCK_WISE_TRANSFER, "Block-Wise-Transfer" }
+    { COAP_SIGNALING_OPTION_BLOCK_WISE_TRANSFER, "Block-Wise-Transfer" },
+    { COAP_SIGNALING_OPTION_EXTENDED_TOKEN_LENGTH, "Extended-Token-Length" }
   };
 
   static struct option_desc_t options_pingpong[] = {
@@ -445,6 +622,7 @@ print_content_format(unsigned int format_type,
     { COAP_MEDIATYPE_APPLICATION_JSON, "application/json" },
     { COAP_MEDIATYPE_APPLICATION_CBOR, "application/cbor" },
     { COAP_MEDIATYPE_APPLICATION_CWT, "application/cwt" },
+    { COAP_MEDIATYPE_APPLICATION_COAP_GROUP_JSON, "application/coap-group+json" },
     { COAP_MEDIATYPE_APPLICATION_COSE_SIGN, "application/cose; cose-type=\"cose-sign\"" },
     { COAP_MEDIATYPE_APPLICATION_COSE_SIGN1, "application/cose; cose-type=\"cose-sign1\"" },
     { COAP_MEDIATYPE_APPLICATION_COSE_ENCRYPT, "application/cose; cose-type=\"cose-encrypt\"" },
@@ -461,8 +639,10 @@ print_content_format(unsigned int format_type,
     { COAP_MEDIATYPE_APPLICATION_SENSML_EXI, "application/sensml-exi" },
     { COAP_MEDIATYPE_APPLICATION_SENML_XML, "application/senml+xml" },
     { COAP_MEDIATYPE_APPLICATION_SENSML_XML, "application/sensml+xml" },
-    { COAP_MEDIATYPE_APPLICATION_COAP_GROUP_JSON, "application/coap-group+json" },
     { COAP_MEDIATYPE_APPLICATION_DOTS_CBOR, "application/dots+cbor" },
+    { COAP_MEDIATYPE_APPLICATION_ACE_CBOR, "application/ace+cbor" },
+    { COAP_MEDIATYPE_APPLICATION_MB_CBOR_SEQ, "application/missing-blocks+cbor-seq" },
+    { COAP_MEDIATYPE_APPLICATION_OSCORE, "application/oscore" },
     { 75, "application/dcaf+cbor" }
   };
 
@@ -494,14 +674,14 @@ is_binary(int content_format) {
 }
 
 #define COAP_DO_SHOW_OUTPUT_LINE           \
- do {                                      \
-   if (use_fprintf_for_show_pdu) {         \
-     fprintf(COAP_DEBUG_FD, "%s", outbuf); \
-   }                                       \
-   else {                                  \
-     coap_log(level, "%s", outbuf);        \
-   }                                       \
- } while (0)
+  do {                                      \
+    if (use_fprintf_for_show_pdu) {         \
+      fprintf(COAP_DEBUG_FD, "%s", outbuf); \
+    }                                       \
+    else {                                  \
+      coap_log(level, "%s", outbuf);        \
+    }                                       \
+  } while (0)
 
 /*
  * It is possible to override the output debug buffer size and hence control
@@ -522,8 +702,8 @@ is_binary(int content_format) {
 void
 coap_show_pdu(coap_log_t level, const coap_pdu_t *pdu) {
 #if COAP_CONSTRAINED_STACK
-  static coap_mutex_t static_show_pdu_mutex = COAP_MUTEX_INITIALIZER;
   /* Proxy-Uri: can be 1034 bytes long */
+  /* buf and outbuf protected by mutex m_show_pdu */
   static unsigned char buf[min(COAP_DEBUG_BUF_SIZE, 1035)];
   static char outbuf[COAP_DEBUG_BUF_SIZE];
 #else /* ! COAP_CONSTRAINED_STACK */
@@ -532,32 +712,47 @@ coap_show_pdu(coap_log_t level, const coap_pdu_t *pdu) {
   char outbuf[COAP_DEBUG_BUF_SIZE];
 #endif /* ! COAP_CONSTRAINED_STACK */
   size_t buf_len = 0; /* takes the number of bytes written to buf */
-  int encode = 0, have_options = 0, i;
+  int encode = 0, have_options = 0;
+  uint32_t i;
   coap_opt_iterator_t opt_iter;
   coap_opt_t *option;
   int content_format = -1;
   size_t data_len;
   const uint8_t *data;
   uint32_t opt_len;
-  const uint8_t* opt_val;
+  const uint8_t *opt_val;
   size_t outbuflen = 0;
+  int is_oscore_payload = 0;
 
   /* Save time if not needed */
   if (level > coap_get_log_level())
     return;
 
 #if COAP_CONSTRAINED_STACK
-  coap_mutex_lock(&static_show_pdu_mutex);
+  coap_mutex_lock(&m_show_pdu);
 #endif /* COAP_CONSTRAINED_STACK */
 
-  snprintf(outbuf, sizeof(outbuf), "v:%d t:%s c:%s i:%04x {",
-          COAP_DEFAULT_VERSION, msg_type_string(pdu->type),
-          msg_code_string(pdu->code), pdu->mid);
+  if (!pdu->session || COAP_PROTO_NOT_RELIABLE(pdu->session->proto)) {
+    snprintf(outbuf, sizeof(outbuf), "v:%d t:%s c:%s i:%04x {",
+             COAP_DEFAULT_VERSION, msg_type_string(pdu->type),
+             msg_code_string(pdu->code), pdu->mid);
+  } else if (pdu->session->proto == COAP_PROTO_WS ||
+             pdu->session->proto == COAP_PROTO_WSS) {
+    if (pdu->type != COAP_MESSAGE_CON)
+      coap_log_alert("WebSocket: type != CON\n");
+    snprintf(outbuf, sizeof(outbuf), "v:WebSocket c:%s {",
+             msg_code_string(pdu->code));
+  } else {
+    if (pdu->type != COAP_MESSAGE_CON)
+      coap_log_alert("Reliable: type != CON\n");
+    snprintf(outbuf, sizeof(outbuf), "v:Reliable c:%s {",
+             msg_code_string(pdu->code));
+  }
 
-  for (i = 0; i < pdu->token_length; i++) {
+  for (i = 0; i < pdu->actual_token.length; i++) {
     outbuflen = strlen(outbuf);
     snprintf(&outbuf[outbuflen], sizeof(outbuf)-outbuflen,
-              "%02x", pdu->token[i]);
+             "%02x", pdu->actual_token.s[i]);
   }
   outbuflen = strlen(outbuf);
   snprintf(&outbuf[outbuflen], sizeof(outbuf)-outbuflen,  "}");
@@ -576,123 +771,199 @@ coap_show_pdu(coap_log_t level, const coap_pdu_t *pdu) {
       snprintf(&outbuf[outbuflen], sizeof(outbuf)-outbuflen,  ",");
     }
 
-    if (pdu->code == COAP_SIGNALING_CODE_CSM) switch(opt_iter.number) {
-    case COAP_SIGNALING_OPTION_MAX_MESSAGE_SIZE:
-      buf_len = snprintf((char *)buf, sizeof(buf), "%u",
-                         coap_decode_var_bytes(coap_opt_value(option),
-                                               coap_opt_length(option)));
-      break;
-    default:
+    if (pdu->code == COAP_SIGNALING_CODE_CSM) {
+      switch (opt_iter.number) {
+      case COAP_SIGNALING_OPTION_EXTENDED_TOKEN_LENGTH:
+      case COAP_SIGNALING_OPTION_MAX_MESSAGE_SIZE:
+        buf_len = snprintf((char *)buf, sizeof(buf), "%u",
+                           coap_decode_var_bytes(coap_opt_value(option),
+                                                 coap_opt_length(option)));
+        break;
+      default:
+        buf_len = 0;
+        break;
+      }
+    } else if (pdu->code == COAP_SIGNALING_CODE_PING ||
+               pdu->code == COAP_SIGNALING_CODE_PONG) {
       buf_len = 0;
-      break;
-    } else if (pdu->code == COAP_SIGNALING_CODE_PING
-            || pdu->code == COAP_SIGNALING_CODE_PONG) {
-      buf_len = 0;
-    } else if (pdu->code == COAP_SIGNALING_CODE_RELEASE) switch(opt_iter.number) {
-    case COAP_SIGNALING_OPTION_ALTERNATIVE_ADDRESS:
-      buf_len = print_readable(coap_opt_value(option),
-                               coap_opt_length(option),
-                               buf, sizeof(buf), 0);
-      break;
-    case COAP_SIGNALING_OPTION_HOLD_OFF:
-      buf_len = snprintf((char *)buf, sizeof(buf), "%u",
-                         coap_decode_var_bytes(coap_opt_value(option),
-                                               coap_opt_length(option)));
-      break;
-    default:
-      buf_len = 0;
-      break;
-    } else if (pdu->code == COAP_SIGNALING_CODE_ABORT) switch(opt_iter.number) {
-    case COAP_SIGNALING_OPTION_BAD_CSM_OPTION:
-      buf_len = snprintf((char *)buf, sizeof(buf), "%u",
-                         coap_decode_var_bytes(coap_opt_value(option),
-                                               coap_opt_length(option)));
-      break;
-    default:
-      buf_len = 0;
-      break;
-    } else switch (opt_iter.number) {
-    case COAP_OPTION_CONTENT_FORMAT:
-    case COAP_OPTION_ACCEPT:
-      content_format = (int)coap_decode_var_bytes(coap_opt_value(option),
-                                                  coap_opt_length(option));
+    } else if (pdu->code == COAP_SIGNALING_CODE_RELEASE) {
+      switch (opt_iter.number) {
+      case COAP_SIGNALING_OPTION_ALTERNATIVE_ADDRESS:
+        buf_len = print_readable(coap_opt_value(option),
+                                 coap_opt_length(option),
+                                 buf, sizeof(buf), 0);
+        break;
+      case COAP_SIGNALING_OPTION_HOLD_OFF:
+        buf_len = snprintf((char *)buf, sizeof(buf), "%u",
+                           coap_decode_var_bytes(coap_opt_value(option),
+                                                 coap_opt_length(option)));
+        break;
+      default:
+        buf_len = 0;
+        break;
+      }
+    } else if (pdu->code == COAP_SIGNALING_CODE_ABORT) {
+      switch (opt_iter.number) {
+      case COAP_SIGNALING_OPTION_BAD_CSM_OPTION:
+        buf_len = snprintf((char *)buf, sizeof(buf), "%u",
+                           coap_decode_var_bytes(coap_opt_value(option),
+                                                 coap_opt_length(option)));
+        break;
+      default:
+        buf_len = 0;
+        break;
+      }
+    } else {
+      switch (opt_iter.number) {
+      case COAP_OPTION_CONTENT_FORMAT:
+      case COAP_OPTION_ACCEPT:
+        content_format = (int)coap_decode_var_bytes(coap_opt_value(option),
+                                                    coap_opt_length(option));
 
-      buf_len = print_content_format(content_format, buf, sizeof(buf));
-      break;
+        buf_len = print_content_format(content_format, buf, sizeof(buf));
+        break;
 
-    case COAP_OPTION_BLOCK1:
-    case COAP_OPTION_BLOCK2:
-      /* split block option into number/more/size where more is the
-       * letter M if set, the _ otherwise */
-      if (COAP_OPT_BLOCK_SZX(option) == 7) {
-        if (coap_get_data(pdu, &data_len, &data))
-          buf_len = snprintf((char *)buf, sizeof(buf), "%u/%c/BERT(%zu)",
+      case COAP_OPTION_BLOCK1:
+      case COAP_OPTION_BLOCK2:
+      case COAP_OPTION_Q_BLOCK1:
+      case COAP_OPTION_Q_BLOCK2:
+        /* split block option into number/more/size where more is the
+         * letter M if set, the _ otherwise */
+        if (COAP_OPT_BLOCK_SZX(option) == 7) {
+          if (coap_get_data(pdu, &data_len, &data))
+            buf_len = snprintf((char *)buf, sizeof(buf), "%u/%c/BERT(%zu)",
+                               coap_opt_block_num(option), /* block number */
+                               COAP_OPT_BLOCK_MORE(option) ? 'M' : '_', /* M bit */
+                               data_len);
+          else
+            buf_len = snprintf((char *)buf, sizeof(buf), "%u/%c/BERT",
+                               coap_opt_block_num(option), /* block number */
+                               COAP_OPT_BLOCK_MORE(option) ? 'M' : '_'); /* M bit */
+        } else {
+          buf_len = snprintf((char *)buf, sizeof(buf), "%u/%c/%u",
                              coap_opt_block_num(option), /* block number */
                              COAP_OPT_BLOCK_MORE(option) ? 'M' : '_', /* M bit */
-                             data_len);
-        else
-          buf_len = snprintf((char *)buf, sizeof(buf), "%u/%c/BERT",
-                             coap_opt_block_num(option), /* block number */
-                             COAP_OPT_BLOCK_MORE(option) ? 'M' : '_'); /* M bit */
-      } else {
-        buf_len = snprintf((char *)buf, sizeof(buf), "%u/%c/%u",
-                           coap_opt_block_num(option), /* block number */
-                           COAP_OPT_BLOCK_MORE(option) ? 'M' : '_', /* M bit */
-                     (1 << (COAP_OPT_BLOCK_SZX(option) + 4))); /* block size */
-      }
+                             (1 << (COAP_OPT_BLOCK_SZX(option) + 4))); /* block size */
+        }
 
-      break;
+        break;
 
-    case COAP_OPTION_URI_PORT:
-    case COAP_OPTION_MAXAGE:
-    case COAP_OPTION_OBSERVE:
-    case COAP_OPTION_SIZE1:
-    case COAP_OPTION_SIZE2:
-    case COAP_OPTION_HOP_LIMIT:
-      /* show values as unsigned decimal value */
-      buf_len = snprintf((char *)buf, sizeof(buf), "%u",
-                         coap_decode_var_bytes(coap_opt_value(option),
-                                               coap_opt_length(option)));
-      break;
+      case COAP_OPTION_OSCORE:
+        opt_len = coap_opt_length(option);
+        buf[0] = '\000';
+        if (opt_len) {
+          size_t ofs = 1;
+          size_t cnt;
 
-    case COAP_OPTION_IF_MATCH:
-    case COAP_OPTION_ETAG:
-    case COAP_OPTION_ECHO:
-    case COAP_OPTION_NORESPONSE:
-    case COAP_OPTION_RTAG:
-      opt_len = coap_opt_length(option);
-      opt_val = coap_opt_value(option);
-      snprintf((char *)buf, sizeof(buf), "0x");
-      for (i = 0; (uint32_t)i < opt_len; i++) {
+          opt_val = coap_opt_value(option);
+          if (opt_val[0] & 0x20) {
+            /* Group Flag */
+            snprintf((char *)buf, sizeof(buf), "grp");
+          }
+          if (opt_val[0] & 0x07) {
+            /* Partial IV */
+            cnt = opt_val[0] & 0x07;
+            if (cnt > opt_len - ofs)
+              goto no_more;
+            buf_len = strlen((char *)buf);
+            snprintf((char *)&buf[buf_len], sizeof(buf)-buf_len, "%spIV=0x",
+                     buf_len ? "," : "");
+            for (i = 0; (uint32_t)i < cnt; i++) {
+              buf_len = strlen((char *)buf);
+              snprintf((char *)&buf[buf_len], sizeof(buf)-buf_len,
+                       "%02x", opt_val[ofs + i]);
+            }
+            ofs += cnt;
+          }
+          if (opt_val[0] & 0x10) {
+            /* kid context */
+            if (ofs >= opt_len)
+              goto no_more;
+            cnt = opt_val[ofs];
+            if (cnt > opt_len - ofs - 1)
+              goto no_more;
+            ofs++;
+            buf_len = strlen((char *)buf);
+            snprintf((char *)&buf[buf_len], sizeof(buf)-buf_len, "%skc=0x",
+                     buf_len ? "," : "");
+            for (i = 0; (uint32_t)i < cnt; i++) {
+              buf_len = strlen((char *)buf);
+              snprintf((char *)&buf[buf_len], sizeof(buf)-buf_len,
+                       "%02x", opt_val[ofs + i]);
+            }
+            ofs += cnt;
+          }
+          if (opt_val[0] & 0x08) {
+            /* kid */
+            if (ofs >= opt_len)
+              goto no_more;
+            cnt = opt_len - ofs;
+            buf_len = strlen((char *)buf);
+            snprintf((char *)&buf[buf_len], sizeof(buf)-buf_len, "%skid=0x",
+                     buf_len ? "," : "");
+            for (i = 0; (uint32_t)i < cnt; i++) {
+              buf_len = strlen((char *)buf);
+              snprintf((char *)&buf[buf_len], sizeof(buf)-buf_len,
+                       "%02x", opt_val[ofs + i]);
+            }
+          }
+        }
+no_more:
         buf_len = strlen((char *)buf);
-        snprintf((char *)&buf[buf_len], sizeof(buf)-buf_len,
-                  "%02x", opt_val[i]);
-      }
-      buf_len = strlen((char *)buf);
-      break;
-    default:
-      /* generic output function for all other option types */
-      if (opt_iter.number == COAP_OPTION_URI_PATH ||
-          opt_iter.number == COAP_OPTION_PROXY_URI ||
-          opt_iter.number == COAP_OPTION_URI_HOST ||
-          opt_iter.number == COAP_OPTION_LOCATION_PATH ||
-          opt_iter.number == COAP_OPTION_LOCATION_QUERY ||
-          opt_iter.number == COAP_OPTION_PROXY_SCHEME ||
-          opt_iter.number == COAP_OPTION_URI_QUERY) {
-        encode = 0;
-      } else {
-        encode = 1;
-      }
+        is_oscore_payload = 1;
+        break;
 
-      buf_len = print_readable(coap_opt_value(option),
-                               coap_opt_length(option),
-                               buf, sizeof(buf), encode);
+      case COAP_OPTION_URI_PORT:
+      case COAP_OPTION_MAXAGE:
+      case COAP_OPTION_OBSERVE:
+      case COAP_OPTION_SIZE1:
+      case COAP_OPTION_SIZE2:
+      case COAP_OPTION_HOP_LIMIT:
+        if (coap_opt_length(option)) {
+          /* show values as unsigned decimal value */
+          buf_len = snprintf((char *)buf, sizeof(buf), "%u",
+                             coap_decode_var_bytes(coap_opt_value(option),
+                                                   coap_opt_length(option)));
+        }
+        break;
+
+      case COAP_OPTION_IF_MATCH:
+      case COAP_OPTION_ETAG:
+      case COAP_OPTION_ECHO:
+      case COAP_OPTION_NORESPONSE:
+      case COAP_OPTION_RTAG:
+        opt_len = coap_opt_length(option);
+        opt_val = coap_opt_value(option);
+        snprintf((char *)buf, sizeof(buf), "0x");
+        for (i = 0; (uint32_t)i < opt_len; i++) {
+          buf_len = strlen((char *)buf);
+          snprintf((char *)&buf[buf_len], sizeof(buf)-buf_len,
+                   "%02x", opt_val[i]);
+        }
+        buf_len = strlen((char *)buf);
+        break;
+      default:
+        /* generic output function for all other option types */
+        if (opt_iter.number == COAP_OPTION_URI_PATH ||
+            opt_iter.number == COAP_OPTION_PROXY_URI ||
+            opt_iter.number == COAP_OPTION_URI_HOST ||
+            opt_iter.number == COAP_OPTION_LOCATION_PATH ||
+            opt_iter.number == COAP_OPTION_LOCATION_QUERY ||
+            opt_iter.number == COAP_OPTION_PROXY_SCHEME ||
+            opt_iter.number == COAP_OPTION_URI_QUERY) {
+          encode = 0;
+        } else {
+          encode = 1;
+        }
+        buf_len = print_readable(coap_opt_value(option),
+                                 coap_opt_length(option),
+                                 buf, sizeof(buf), encode);
+      }
     }
-
     outbuflen = strlen(outbuf);
     snprintf(&outbuf[outbuflen], sizeof(outbuf)-outbuflen,
-              " %s:%.*s", msg_option_string(pdu->code, opt_iter.number),
-              (int)buf_len, buf);
+             " %s:%.*s", msg_option_string(pdu->code, opt_iter.number),
+             (int)buf_len, buf);
   }
 
   outbuflen = strlen(outbuf);
@@ -703,7 +974,7 @@ coap_show_pdu(coap_log_t level, const coap_pdu_t *pdu) {
     outbuflen = strlen(outbuf);
     snprintf(&outbuf[outbuflen], sizeof(outbuf)-outbuflen,  " :: ");
 
-    if (is_binary(content_format) || !isprint(data[0])) {
+    if (is_binary(content_format) || !isprint(data[0]) || is_oscore_payload) {
       size_t keep_data_len = data_len;
       const uint8_t *keep_data = data;
 
@@ -726,6 +997,8 @@ coap_show_pdu(coap_log_t level, const coap_pdu_t *pdu) {
       data_len = keep_data_len;
       data = keep_data;
       outbuflen = strlen(outbuf);
+      if (outbuflen == sizeof(outbuf)-1)
+        outbuflen--;
       snprintf(&outbuf[outbuflen], sizeof(outbuf)-outbuflen,  "\n");
       COAP_DO_SHOW_OUTPUT_LINE;
       /*
@@ -737,7 +1010,7 @@ coap_show_pdu(coap_log_t level, const coap_pdu_t *pdu) {
       while (data_len--) {
         outbuflen = strlen(outbuf);
         snprintf(&outbuf[outbuflen], sizeof(outbuf)-outbuflen,
-                 "%c ", isprint (*data) ? *data : '.');
+                 "%c ", isprint(*data) ? *data : '.');
         data++;
       }
       outbuflen = strlen(outbuf);
@@ -754,7 +1027,7 @@ coap_show_pdu(coap_log_t level, const coap_pdu_t *pdu) {
       }
       if (max_length > 1) {
         outbuflen += print_readable(data, data_len,
-                                    (unsigned char*)&outbuf[outbuflen],
+                                    (unsigned char *)&outbuf[outbuflen],
                                     max_length, 0);
       }
       /* print_readable may be handling unprintables - hence headroom of 4 */
@@ -766,24 +1039,25 @@ coap_show_pdu(coap_log_t level, const coap_pdu_t *pdu) {
   }
 
   outbuflen = strlen(outbuf);
-  if (outbuflen == sizeof(outbuf)-1) outbuflen--;
+  if (outbuflen == sizeof(outbuf)-1)
+    outbuflen--;
   snprintf(&outbuf[outbuflen], sizeof(outbuf)-outbuflen,  "\n");
   COAP_DO_SHOW_OUTPUT_LINE;
 
 #if COAP_CONSTRAINED_STACK
-  coap_mutex_unlock(&static_show_pdu_mutex);
+  coap_mutex_unlock(&m_show_pdu);
 #endif /* COAP_CONSTRAINED_STACK */
 }
 
-void coap_show_tls_version(coap_log_t level)
-{
+void
+coap_show_tls_version(coap_log_t level) {
   char buffer[128];
   coap_string_tls_version(buffer, sizeof(buffer));
   coap_log(level, "%s\n", buffer);
 }
 
-char *coap_string_tls_version(char *buffer, size_t bufsize)
-{
+char *
+coap_string_tls_version(char *buffer, size_t bufsize) {
   coap_tls_version_t *tls_version = coap_get_tls_library_version();
   char beta[8];
   char sub[2];
@@ -819,7 +1093,7 @@ char *coap_string_tls_version(char *buffer, size_t bufsize)
       break;
     }
     sub[0] = ((tls_version->version >> 4) & 0xff) ?
-                    ((tls_version->version >> 4) & 0xff) + 'a' -1 : '\000';
+             ((tls_version->version >> 4) & 0xff) + 'a' -1 : '\000';
     sub[1] = '\000';
     switch (tls_version->built_version &0xf) {
     case 0:
@@ -874,72 +1148,47 @@ char *coap_string_tls_version(char *buffer, size_t bufsize)
   return buffer;
 }
 
-char *coap_string_tls_support(char *buffer, size_t bufsize)
-{
-  coap_tls_version_t *tls_version = coap_get_tls_library_version();
+char *
+coap_string_tls_support(char *buffer, size_t bufsize) {
   const int have_tls = coap_tls_is_supported();
   const int have_dtls = coap_dtls_is_supported();
+  const int have_psk = coap_dtls_psk_is_supported();
+  const int have_pki = coap_dtls_pki_is_supported();
+  const int have_pkcs11 = coap_dtls_pkcs11_is_supported();
+  const int have_rpk = coap_dtls_rpk_is_supported();
+  const int have_oscore = coap_oscore_is_supported();
+  const int have_ws = coap_ws_is_supported();
 
   if (have_dtls == 0 && have_tls == 0) {
     snprintf(buffer, bufsize, "(No DTLS or TLS support)");
     return buffer;
   }
-  switch (tls_version->type) {
-  case COAP_TLS_LIBRARY_NOTLS:
-    snprintf(buffer, bufsize, "(No DTLS or TLS support)");
-    break;
-  case COAP_TLS_LIBRARY_TINYDTLS:
-    snprintf(buffer, bufsize,
-             "(%sDTLS and%s TLS support; PSK, no PKI, no PKCS11, and RPK support)",
-             have_dtls ? "" : " no",
-             have_tls ? "" : " no");
-    break;
-  case COAP_TLS_LIBRARY_OPENSSL:
-    snprintf(buffer, bufsize,
-             "(%sDTLS and%s TLS support; PSK, PKI, PKCS11, and no RPK support)",
-             have_dtls ? "" : " no",
-             have_tls ? "" : " no");
-    break;
-  case COAP_TLS_LIBRARY_GNUTLS:
-    if (tls_version->version >= 0x030606)
-      snprintf(buffer, bufsize,
-               "(%sDTLS and%s TLS support; PSK, PKI, PKCS11, and RPK support)",
-               have_dtls ? "" : " no",
-               have_tls ? "" : " no");
-    else
-      snprintf(buffer, bufsize,
-               "(%sDTLS and%s TLS support; PSK, PKI, PKCS11, and no RPK support)",
-               have_dtls ? "" : " no",
-               have_tls ? "" : " no");
-    break;
-  case COAP_TLS_LIBRARY_MBEDTLS:
-    snprintf(buffer, bufsize,
-             "(%sDTLS and%s TLS support; PSK, PKI, no PKCS11, and no RPK support)",
-             have_dtls ? "" : " no",
-             have_tls ? "" : " no");
-    break;
-  default:
-    buffer[0] = '\000';
-    break;
-  }
+  snprintf(buffer, bufsize,
+           "(%sDTLS and %sTLS support; %sPSK, %sPKI, %sPKCS11, and %sRPK support)\n(%sOSCORE)\n(%sWebSockets)",
+           have_dtls ? "" : "No ",
+           have_tls ? "" : "no ",
+           have_psk ? "" : "no ",
+           have_pki ? "" : "no ",
+           have_pkcs11 ? "" : "no ",
+           have_rpk ? "" : "no ",
+           have_oscore ? "Have " : "No ",
+           have_ws ? "Have " : "No ");
   return buffer;
 }
 
 static coap_log_handler_t log_handler = NULL;
 
-void coap_set_log_handler(coap_log_handler_t handler) {
+void
+coap_set_log_handler(coap_log_handler_t handler) {
   log_handler = handler;
 }
 
 void
 coap_log_impl(coap_log_t level, const char *format, ...) {
 
-  if (maxlog < level)
-    return;
-
   if (log_handler) {
 #if COAP_CONSTRAINED_STACK
-    static coap_mutex_t static_log_mutex = COAP_MUTEX_INITIALIZER;
+    /* message protected by mutex m_log_impl */
     static char message[COAP_DEBUG_BUF_SIZE];
 #else /* ! COAP_CONSTRAINED_STACK */
     char message[COAP_DEBUG_BUF_SIZE];
@@ -947,14 +1196,14 @@ coap_log_impl(coap_log_t level, const char *format, ...) {
     va_list ap;
     va_start(ap, format);
 #if COAP_CONSTRAINED_STACK
-  coap_mutex_lock(&static_log_mutex);
+    coap_mutex_lock(&m_log_impl);
 #endif /* COAP_CONSTRAINED_STACK */
 
-    vsnprintf( message, sizeof(message), format, ap);
+    vsnprintf(message, sizeof(message), format, ap);
     va_end(ap);
     log_handler(level, message);
 #if COAP_CONSTRAINED_STACK
-    coap_mutex_unlock(&static_log_mutex);
+    coap_mutex_unlock(&m_log_impl);
 #endif /* COAP_CONSTRAINED_STACK */
   } else {
     char timebuf[32];
@@ -963,15 +1212,18 @@ coap_log_impl(coap_log_t level, const char *format, ...) {
     FILE *log_fd;
     size_t len;
 
-    log_fd = level <= LOG_CRIT ? COAP_ERR_FD : COAP_DEBUG_FD;
+    log_fd = level <= COAP_LOG_CRIT ? COAP_ERR_FD : COAP_DEBUG_FD;
 
     coap_ticks(&now);
     len = print_timestamp(timebuf,sizeof(timebuf), now);
     if (len)
       fprintf(log_fd, "%.*s ", (int)len, timebuf);
 
-    if (level <= COAP_LOG_CIPHERS)
+    if (level >= sizeof(loglevels)/sizeof(loglevels[0])) {
+      fprintf(log_fd, "%4d ", level);
+    } else {
       fprintf(log_fd, "%s ", loglevels[level]);
+    }
 
     va_start(ap, format);
     vfprintf(log_fd, format, ap);
@@ -988,7 +1240,8 @@ static int num_packet_loss_intervals = 0;
 static int packet_loss_level = 0;
 static int send_packet_count = 0;
 
-int coap_debug_set_packet_loss(const char *loss_level) {
+int
+coap_debug_set_packet_loss(const char *loss_level) {
   const char *p = loss_level;
   char *end = NULL;
   int n = (int)strtol(p, &end, 10), i = 0;
@@ -998,7 +1251,7 @@ int coap_debug_set_packet_loss(const char *loss_level) {
     if (n > 100)
       n = 100;
     packet_loss_level = n * 65536 / 100;
-    coap_log(LOG_DEBUG, "packet loss level set to %d%%\n", n);
+    coap_log_debug("packet loss level set to %d%%\n", n);
   } else {
     if (n <= 0)
       return 0;
@@ -1028,25 +1281,35 @@ int coap_debug_set_packet_loss(const char *loss_level) {
   return 1;
 }
 
-int coap_debug_send_packet(void) {
+int
+coap_debug_send_packet(void) {
   ++send_packet_count;
   if (num_packet_loss_intervals > 0) {
     int i;
     for (i = 0; i < num_packet_loss_intervals; i++) {
-      if (send_packet_count >= packet_loss_intervals[i].start
-        && send_packet_count <= packet_loss_intervals[i].end) {
-        coap_log(LOG_DEBUG, "Packet %u dropped\n", send_packet_count);
+      if (send_packet_count >= packet_loss_intervals[i].start &&
+          send_packet_count <= packet_loss_intervals[i].end) {
+        coap_log_debug("Packet %u dropped\n", send_packet_count);
         return 0;
       }
     }
   }
-  if ( packet_loss_level > 0 ) {
+  if (packet_loss_level > 0) {
     uint16_t r = 0;
-    coap_prng( (uint8_t*)&r, 2 );
-    if ( r < packet_loss_level ) {
-      coap_log(LOG_DEBUG, "Packet %u dropped\n", send_packet_count);
+    coap_prng((uint8_t *)&r, 2);
+    if (r < packet_loss_level) {
+      coap_log_debug("Packet %u dropped\n", send_packet_count);
       return 0;
     }
   }
   return 1;
+}
+
+void
+coap_debug_reset(void) {
+  maxlog = COAP_LOG_WARN;
+  use_fprintf_for_show_pdu = 1;
+  num_packet_loss_intervals = 0;
+  packet_loss_level = 0;
+  send_packet_count = 0;
 }

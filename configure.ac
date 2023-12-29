@@ -1,8 +1,8 @@
 # configure.ac for the libcoap package
 #
-# Copyright (C) 2010-2022 Olaf Bergmann <bergmann@tzi.org>
+# Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
 # Copyright (C) 2015-2018 Carsten Schoenert <c.schoenert@t-online.de>
-# Copyright (C) 2018-2022 Jon Shallow <supjps-libcoap@jpshallow.com>
+# Copyright (C) 2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
@@ -15,7 +15,7 @@
 # defined later.
 m4_define([libcoap_major_version], [4])
 m4_define([libcoap_minor_version], [3])
-m4_define([libcoap_micro_version], [1])
+m4_define([libcoap_micro_version], [4])
 
 # define an appending release state if needed, for example for pre-releases
 # like 'alpha' or 'rc1', for a full release keep the value empty!
@@ -113,9 +113,40 @@ LT_INIT([shared static])
 #
 #  --> Set 'LT_LIBCOAP_AGE' to 0.
 
-LT_LIBCOAP_CURRENT=3
-LT_LIBCOAP_REVISION=0
-LT_LIBCOAP_AGE=0
+# The following explanation may help to understand the above rules a bit better:
+# consider that there are three possible kinds of reactions from users of your
+# library to changes in a shared library:
+#
+# 1. Programs using the previous version may use the new version as drop-in
+#    replacement, and programs using the new version can also work with the
+#    previous one. In other words, no recompiling nor relinking is needed. In this
+#    case, bump 'LT_LIBCOAP_REVISION' only, don't touch 'LT_LIBCOAP_CURRENT' nor
+#    'LT_LIBCOAP_AGE'.
+#
+# 2. Programs using the previous version may use the new version
+#    as drop-in replacement, but programs using the new version may use APIs not
+#    present in the previous one. In other words, a program linking against the new
+#    version may fail with 'unresolved symbols' if linking against the old version
+#    at runtime: set 'LT_LIBCOAP_REVISION' to 0, bump 'LT_LIBCOAP_CURRENT' and
+#    'LT_LIBCOAP_AGE'.
+#
+# 3. Programs may need to be changed, recompiled, and relinked in
+#    order to use the new version. Bump 'LT_LIBCOAP_CURRENT',
+#    set 'LT_LIBCOAP_REVISION' and 'LT_LIBCOAP_AGE' to 0.
+
+# To add to the confusion, if LIBCOAP_SO_VERSION is set to 3:0:1 (c:r:a), then the
+# .so version naming ends up as 2.1.0 (c-a:a:r) (as decided by libtool).
+
+#
+# CAUTION
+#
+# You will need to manually update VERSION and LIBCOAP_ABI_VERSION in CMakeLists.txt
+# if changes are made to libcoap_xx_version and LT_LIBCOAP_xx respectively.
+#
+
+LT_LIBCOAP_CURRENT=4
+LT_LIBCOAP_REVISION=1
+LT_LIBCOAP_AGE=1
 LIBCOAP_SO_VERSION=$LT_LIBCOAP_CURRENT.$LT_LIBCOAP_REVISION.$LT_LIBCOAP_AGE
 
 # Announce the libtool version
@@ -126,6 +157,16 @@ AC_SUBST(LIBCOAP_SO_VERSION)
 
 # Defining the API Version
 LIBCOAP_API_VERSION=3
+
+# calculate the ABI version naming as calculated by libtool
+m4_pattern_allow(LT_TEMP)
+LT_TEMP=$LT_LIBCOAP_CURRENT
+LT_TEMP=`expr $LT_TEMP - $LT_LIBCOAP_AGE`
+if test "$LT_TEMP" != "$LIBCOAP_API_VERSION" ; then
+   AC_MSG_ERROR([==> API version ($LIBCOAP_API_VERSION) does not match base of ABI ($LT_TEMP.$LT_LIBCOAP_AGE.$LT_LIBCOAP_REVISION) version.])
+fi
+LIBCOAP_ABI_VERSION=$LT_TEMP.$LT_LIBCOAP_AGE.$LT_LIBCOAP_REVISION
+AC_SUBST(LIBCOAP_ABI_VERSION)
 AC_SUBST(LIBCOAP_API_VERSION)
 
 # Define a numeric version string
@@ -163,6 +204,11 @@ WARNING_CFLAGS="\
 AX_CHECK_COMPILE_FLAG([-Wlogical-op], [WARNING_CFLAGS="$WARNING_CFLAGS -Wlogical-op"],,[-Werror])
 AX_CHECK_COMPILE_FLAG([-fdiagnostics-color], [CFLAGS="$CFLAGS -fdiagnostics-color"],,[-Werror])
 AX_CHECK_COMPILE_FLAG([-Wunused-result], [WARNING_CFLAGS="$WARNING_CFLAGS -Wunused-result"])
+
+# clang 14+ generates dwarf-5, which is not currently supported by valgrind
+if test "x$CC" = "xclang"; then
+    WARNING_CFLAGS="$WARNING_CFLAGS -gdwarf-4"
+fi
 
 AC_SUBST([WARNING_CFLAGS])
 
@@ -527,6 +573,8 @@ if test "x$build_dtls" = "xyes"; then
                if test "x$tinydtls_libs_overridden" != "xyes";  then
                    TinyDTLS_LIBS="$auto_TinyDTLS_LIBS"
                fi
+               # 'git submodule update' may be required
+               AC_DEFINE(HAVE_DTLS_SET_LOG_HANDLER, [1], [Define to 1 if TinyDTLS has dtls_set_log_handler.])
             else
                 AC_MSG_ERROR([==> You want to build libcoap with DTLS support using the TinyDTLS submodule library but no suitable version could be found!
                             Check whether you have updated the TinyDTLS git submodule, use the system-provided version if available (set '--with-submodule-tinydtls=no'),
@@ -538,9 +586,7 @@ if test "x$build_dtls" = "xyes"; then
             AC_MSG_NOTICE([Using system-provided TinyDTLS])
             tinydtls_version=`$PKG_CONFIG --modversion tinydtls`
             AX_CHECK_TINYDTLS_VERSION
-            have_gnutls="no" # don't confuse AC_MSG_RESULT at the end of the script
-            have_mbedtls="no" # don't confuse AC_MSG_RESULT at the end of the script
-            have_openssl="no" # don't confuse AC_MSG_RESULT at the end of the script
+            AC_CHECK_LIB(tinydtls,dtls_set_log_handler,AC_DEFINE(HAVE_DTLS_SET_LOG_HANDLER, [1], [Define to 1 if TinyDTLS has dtls_set_log_handler.]))
         else
             AC_MSG_ERROR([==> You want to build libcoap with DTLS support using the TinyDTLS library but no suitable version could be found!
                         Use the submodule TinyDTLS version (set '--with-submodule-tinydtls=yes' and update the git submodule),
@@ -610,22 +656,22 @@ if test "x$build_dtls" = "xyes"; then
     if test "x$with_gnutls" = "xyes" -o "x$with_gnutls_auto" = "xyes"; then
         DTLS_CFLAGS="$GnuTLS_CFLAGS"
         DTLS_LIBS="$GnuTLS_LIBS"
-        AC_DEFINE(HAVE_LIBGNUTLS, [1], [Define if the system has libgnutls28])
+        AC_DEFINE(COAP_WITH_LIBGNUTLS, [1], [Define to 1 if the system has libgnutls28.])
     fi
     if test "x$with_openssl" = "xyes" -o "x$with_openssl_auto" = "xyes"; then
         DTLS_CFLAGS="$OpenSSL_CFLAGS"
         DTLS_LIBS="$OpenSSL_LIBS"
-        AC_DEFINE(HAVE_OPENSSL, [1], [Define if the system has libssl1.1])
+        AC_DEFINE(COAP_WITH_LIBOPENSSL, [1], [Define to 1 if the system has libssl1.1.])
     fi
     if test "x$with_mbedtls" = "xyes" -o "x$with_mbedtls_auto" = "xyes"; then
         DTLS_CFLAGS="$MbedTLS_CFLAGS"
         DTLS_LIBS="$MbedTLS_LIBS"
-        AC_DEFINE(HAVE_MBEDTLS, [1], [Define if the system has libmbedtls2.7.10])
+        AC_DEFINE(COAP_WITH_LIBMBEDTLS, [1], [Define to 1 if the system has libmbedtls2.7.10.])
     fi
     if test "x$with_tinydtls" = "xyes" -o "x$with_tinydtls_auto" = "xyes"; then
         DTLS_CFLAGS="$TinyDTLS_CFLAGS"
         DTLS_LIBS="$TinyDTLS_LIBS"
-        AC_DEFINE(HAVE_LIBTINYDTLS, [1], [Define if the system has libtinydtls])
+        AC_DEFINE(COAP_WITH_LIBTINYDTLS, [1], [Define to 1 if the system has libtinydtls.])
     fi
     AC_SUBST(DTLS_CFLAGS)
     AC_SUBST(DTLS_LIBS)
@@ -642,13 +688,35 @@ elif test "x$with_tinydtls" = "xyes"; then
     LIBCOAP_DTLS_LIB_EXTENSION_NAME=-tinydtls
 else
     LIBCOAP_DTLS_LIB_EXTENSION_NAME=-notls
+    AC_DEFINE(HAVE_NOTLS, [1], [Define to 1 if libcoap has no tls library support.])
 fi
+AM_CONDITIONAL(HAVE_NOTLS, [test "x$LIBCOAP_DTLS_LIB_EXTENSION_NAME" = "x-notls"])
 
 LIBCOAP_NAME_SUFFIX="$LIBCOAP_API_VERSION$LIBCOAP_DTLS_LIB_EXTENSION_NAME"
 
 AC_SUBST(LIBCOAP_NAME_SUFFIX)
 AC_SUBST(LIBCOAP_DTLS_LIB_EXTENSION_NAME)
 AC_SUBST([DOLLAR_SIGN],[$])
+
+# configure options
+# __OSCORE__
+# Support for Object Security according to RFC 8613.
+AC_ARG_ENABLE([oscore],
+              [AS_HELP_STRING([--enable-oscore],
+                              [Enable building with OSCORE support [default=yes]])],
+              [build_oscore="$enableval"],
+              [build_oscore="yes"])
+
+if test "x$build_oscore" = "xyes"; then
+    if test "x$LIBCOAP_DTLS_LIB_EXTENSION_NAME" = "x-notls"; then
+        AC_MSG_WARN([==> --enable-oscore requires crypto support from TLS library or OS])
+    fi
+fi
+
+if test "x$build_oscore" = "xyes"; then
+        AC_DEFINE(COAP_OSCORE_SUPPORT, [1], [Define to 1 to build with OSCORE support.])
+fi
+AM_CONDITIONAL(COAP_OSCORE_SUPPORT, [test "x$build_oscore" = "xyes"])
 
 # configure options
 # __tests__
@@ -662,7 +730,7 @@ if test "x$build_tests" = "xyes"; then
     PKG_CHECK_MODULES([CUNIT],
                       [cunit],
                       [have_cunit=yes
-                       AC_DEFINE(HAVE_LIBCUNIT, [1], [Define if the system has libcunit])],
+                       AC_DEFINE(HAVE_LIBCUNIT, [1], [Define to 1 if the system has libcunit.])],
                       [have_cunit=no
                        AC_MSG_WARN([==> You want to build the testing binary but the pkg-config file cunit.pc could not be found or installed CUnit version is too old!])
                        AC_MSG_ERROR([==> Install the package(s) that contains the development files for CUnit or disable the testing binary using '--disable-tests'.])
@@ -726,6 +794,39 @@ AC_ARG_ENABLE([license-install],
 AM_CONDITIONAL(BUILD_LICENSE_INSTALL, [test "x$build_license_install" = "xyes"])
 
 # configure options
+# __ipv4__
+AC_ARG_ENABLE([ipv4],
+              [AS_HELP_STRING([--enable-ipv4-support],
+                              [Enable building with support for IPv4 packets [default=yes]])],
+              [build_ipv4_support="$enableval"],
+              [build_ipv4_support="yes"])
+
+AS_IF([test "x$build_ipv4_support" = "xyes"],
+      [AC_DEFINE(COAP_IPV4_SUPPORT, [1], [Define to build support for IPv4 packets.])])
+
+# configure options
+# __ipv6__
+AC_ARG_ENABLE([ipv6],
+              [AS_HELP_STRING([--enable-ipv6-support],
+                              [Enable building with support for IPv6 packets [default=yes]])],
+              [build_ipv6_support="$enableval"],
+              [build_ipv6_support="yes"])
+
+AS_IF([test "x$build_ipv6_support" = "xyes"],
+      [AC_DEFINE(COAP_IPV6_SUPPORT, [1], [Define to build support for IPv6 packets.])])
+
+# configure options
+# __af_unix__
+AC_ARG_ENABLE([af_unix],
+              [AS_HELP_STRING([--enable-af-unix-support],
+                              [Enable building with support for Unix socket packets [default=yes]])],
+              [build_af_unix_support="$enableval"],
+              [build_af_unix_support="yes"])
+
+AS_IF([test "x$build_af_unix_support" = "xyes"],
+      [AC_DEFINE(COAP_AF_UNIX_SUPPORT, [1], [Define to build support for Unix socket packets.])])
+
+# configure options
 # __tcp__
 AC_ARG_ENABLE([tcp],
               [AS_HELP_STRING([--enable-tcp],
@@ -738,15 +839,57 @@ AS_IF([test "x$build_tcp" != "xyes"], [AC_DEFINE(COAP_DISABLE_TCP, [1])])
 AC_SUBST(COAP_DISABLE_TCP)
 
 # configure options
+# __websockets__
+AC_ARG_ENABLE([websockets],
+              [AS_HELP_STRING([--enable-websockets],
+                              [Enable building with WebSockets support [default=yes]])],
+              [build_ws="$enableval"],
+              [build_ws="yes"])
+
+if test "x$build_ws" = "xyes"; then
+    if test "x$build_tcp" != "xyes"; then
+        build_ws=no
+        AC_MSG_WARN([--enable-websockets requires --enable-tcp, so --enable-websockets ignored.])
+    fi
+fi
+
+AS_IF([test "x$build_ws" = "xyes"],
+      [AC_DEFINE(COAP_WS_SUPPORT, [1], [Define to 1 to build with WebSockets support.])])
+AC_SUBST(COAP_WS_SUPPORT)
+
+# configure options
 # __async__
 AC_ARG_ENABLE([async],
               [AS_HELP_STRING([--enable-async],
-                              [Enable building with support for separate responses [default=yes]])],
+                              [Enable building with support for async separate responses [default=yes]])],
               [build_async="$enableval"],
               [build_async="yes"])
 
-AS_IF([test "x$build_async" != "xyes"],
-      [AC_DEFINE(WITHOUT_ASYNC, [1], [Define to build without support for separate responses.])])
+AS_IF([test "x$build_async" = "xyes"],
+      [AC_DEFINE(COAP_ASYNC_SUPPORT, [1], [Define to 1 to build with support for async separate responses.])])
+
+# configure options
+# __observe_persist__
+AC_ARG_ENABLE([async],
+              [AS_HELP_STRING([--enable-observe-persist],
+                              [Enable building with support for persisting observes over a server restart [default=yes]])],
+              [build_observe_persist="$enableval"],
+              [build_observe_persist="yes"])
+
+AS_IF([test "x$build_observe_persist" = "xyes"],
+      [AC_DEFINE(COAP_WITH_OBSERVE_PERSIST, [1], [Define to 1 to build support for persisting observes.])])
+
+# configure options
+# __q_block__
+# Support for Q-Block according to RFC 9177.
+AC_ARG_ENABLE([q-block],
+              [AS_HELP_STRING([--enable-q-block],
+                              [Enable building with Q-Block support [default=yes]])],
+              [build_q_block="$enableval"],
+              [build_q_block="yes"])
+
+AS_IF([test "x$build_q_block" = "xyes"],
+     [AC_DEFINE(COAP_Q_BLOCK_SUPPORT, [1], [Define to 1 to build with Q-Block support.])])
 
 # configure options
 # __add_default_names__
@@ -797,9 +940,9 @@ fi
 
 # Checks for header files.
 AC_CHECK_HEADERS([assert.h arpa/inet.h limits.h netdb.h netinet/in.h \
-                  pthread.h \
+                  pthread.h errno.h winsock2.h ws2tcpip.h \
                   stdlib.h string.h strings.h sys/socket.h sys/time.h \
-                  time.h unistd.h sys/unistd.h syslog.h sys/ioctl.h net/if.h])
+                  time.h unistd.h sys/unistd.h sys/ioctl.h net/if.h ifaddrs.h])
 
 # For epoll, need two headers (sys/epoll.h sys/timerfd.h), but set up one #define
 AC_CHECK_HEADER([sys/epoll.h])
@@ -820,7 +963,7 @@ else
 fi
 
 if test "x$with_epoll" = "xyes"; then
-    AC_DEFINE(COAP_EPOLL_SUPPORT, 1, [Define if the system has epoll support])
+    AC_DEFINE(COAP_EPOLL_SUPPORT, 1, [Define to 1 if the system has epoll support.])
 fi
 
 AC_ARG_ENABLE([small-stack],
@@ -830,7 +973,7 @@ AC_ARG_ENABLE([small-stack],
         [enable_small_stack="no"])
 
 if test "x$enable_small_stack" = "xyes"; then
-    AC_DEFINE(COAP_CONSTRAINED_STACK, 1, [Define if the system has small stack size])
+    AC_DEFINE(COAP_CONSTRAINED_STACK, 1, [Define to 1 if the system has small stack size.])
 fi
 
 AC_ARG_ENABLE([server-mode],
@@ -840,7 +983,7 @@ AC_ARG_ENABLE([server-mode],
         [enable_server_mode="yes"])
 
 if test "x$enable_server_mode" = "xyes"; then
-    AC_DEFINE(COAP_SERVER_SUPPORT, 1, [Define if libcoap supports server mode code])
+    AC_DEFINE(COAP_SERVER_SUPPORT, 1, [Define to 1 if libcoap supports server mode code.])
 fi
 AM_CONDITIONAL(HAVE_SERVER_SUPPORT, [test "x$enable_server_mode" = "xyes"])
 
@@ -851,11 +994,34 @@ AC_ARG_ENABLE([client-mode],
         [enable_client_mode="yes"])
 
 if test "x$enable_client_mode" = "xyes"; then
-    AC_DEFINE(COAP_CLIENT_SUPPORT, 1, [Define if libcoap supports client mode code])
+    AC_DEFINE(COAP_CLIENT_SUPPORT, 1, [Define to 1 if libcoap supports client mode code.])
 fi
 AM_CONDITIONAL(HAVE_CLIENT_SUPPORT, [test "x$enable_client_mode" = "xyes"])
 if test "x$enable_server_mode" != "xyes" -a "x$enable_client_mode" != "xyes" ; then
     AC_MSG_ERROR([==> One or both of '--enable-server-mode' and '--enable-client-mode' need to be set!])
+fi
+
+AC_ARG_ENABLE([max-logging-level],
+        [AS_HELP_STRING([--enable-max-logging-level],
+                        [Only build logging code up to and including the specified logging level [default=8]])],
+        [enable_max_logging_level="$enableval"],
+        [enable_max_logging_level="8"])
+
+if test "x$enable_max_logging_level" != "x8"; then
+    case x$enable_max_logging_level in
+        x0) ;;
+        x1) ;;
+        x2) ;;
+        x3) ;;
+        x4) ;;
+        x5) ;;
+        x6) ;;
+        x7) ;;
+        *)
+        AC_MSG_ERROR([--emable-max-logging-level must have a value of 0 through 8 inclusive])
+        ;;
+    esac
+    AC_DEFINE_UNQUOTED([COAP_MAX_LOGGING_LEVEL], [$enable_max_logging_level], [Define to level if max logging level is not 8])
 fi
 
 # Checks for typedefs, structures, and compiler characteristics.
@@ -864,7 +1030,7 @@ AC_TYPE_SSIZE_T
 
 # Checks for library functions.
 AC_CHECK_FUNCS([memset select socket strcasecmp strrchr getaddrinfo \
-                strnlen malloc pthread_mutex_lock getrandom if_nametoindex])
+                strnlen malloc pthread_mutex_lock getrandom random if_nametoindex])
 
 # Check if -lsocket -lnsl is required (specifically Solaris)
 AC_SEARCH_LIBS([socket], [socket])
@@ -928,6 +1094,12 @@ case $host in
     ADDITIONAL_CFLAGS="-D_GNU_SOURCE"
     ;;
 
+    *mingw*)
+    AC_MSG_RESULT([MinGW])
+    ADDITIONAL_CFLAGS="-D_GNU_SOURCE -Wno-format -Wno-format-security"
+    LIBS="${LIBS} -lws2_32"
+    ;;
+
     *)
     AC_MSG_WARN([==> Currently unsupported operating system '${host}' !])
     AC_MSG_ERROR([==> If you can provide patches to support your operating system please write to 'libcoap-developers@lists.sourceforge.net'.])
@@ -949,35 +1121,45 @@ CFLAGS="$CFLAGS $ADDITIONAL_CFLAGS"
 #
 AC_CONFIG_FILES([
 Makefile
-coap_config.h.lwip
 coap_config.h.riot
 coap_config.h.windows
 doc/Makefile
 examples/Makefile
+examples/lwip/config/coap_config.h
 include/coap$LIBCOAP_API_VERSION/coap.h
+include/coap$LIBCOAP_API_VERSION/coap.h.riot
 include/coap$LIBCOAP_API_VERSION/coap.h.windows
 man/coap.txt
+man/coap_address.txt
 man/coap_async.txt
 man/coap_attribute.txt
 man/coap_block.txt
 man/coap_cache.txt
 man/coap_context.txt
+man/coap_deprecated.txt
 man/coap_encryption.txt
 man/coap_endpoint_client.txt
 man/coap_endpoint_server.txt
 man/coap_handler.txt
+man/coap_init.txt
 man/coap_io.txt
 man/coap_keepalive.txt
 man/coap_logging.txt
+man/coap_lwip.txt
 man/coap_observe.txt
+man/coap_oscore.txt
 man/coap_pdu_access.txt
 man/coap_pdu_setup.txt
+man/coap_persist.txt
 man/coap_recovery.txt
 man/coap_resource.txt
 man/coap_session.txt
 man/coap_string.txt
 man/coap_tls_library.txt
+man/coap_uri.txt
+man/coap_websockets.txt
 man/coap-client.txt
+man/coap-oscore-conf.txt
 man/coap-server.txt
 man/coap-rd.txt
 man/Makefile
@@ -989,118 +1171,160 @@ libcoap-$LIBCOAP_NAME_SUFFIX.pc:libcoap-$LIBCOAP_API_VERSION.pc.in
 
 AC_OUTPUT
 
+LIBCOAP_BUILD=`git describe --tags --dirty --always`
+if test "x$LIBCOAP_BUILD" = "x"; then
+    LIBCOAP_BUILD=$PACKAGE_VERSION
+fi
+
 AC_MSG_RESULT([
-libcoap configuration summary:
-      libcoap package version  : "$PACKAGE_VERSION"
-      libcoap library version  : "$LIBCOAP_SO_VERSION"
-      libcoap API version      : "$LIBCOAP_API_VERSION"
-      libcoap DTLS lib extn    : "$LIBCOAP_DTLS_LIB_EXTENSION_NAME"
-      host system              : "$host"]);
+libcoap Configuration Summary:
+      libcoap package version        : "$PACKAGE_VERSION"
+      libcoap package source         : "$LIBCOAP_BUILD"
+      libcoap API version            : "$LIBCOAP_API_VERSION"
+      libcoap ABI version            : "$LIBCOAP_ABI_VERSION"
+      libcoap libtool SO version     : "$LIBCOAP_SO_VERSION"
+      libcoap DTLS lib extn          : "$LIBCOAP_DTLS_LIB_EXTENSION_NAME"
+      host system                    : "$host"]);
 if test "x$enable_server_mode" = "xyes"; then
-    AC_MSG_RESULT([      build with server support: "yes"])
+    AC_MSG_RESULT([      build with server support      : "yes"])
 else
-    AC_MSG_RESULT([      build with server support: "no"])
+    AC_MSG_RESULT([      build with server support      : "no"])
 fi
 if test "x$enable_client_mode" = "xyes"; then
-    AC_MSG_RESULT([      build with client support: "yes"])
+    AC_MSG_RESULT([      build with client support      : "yes"])
 else
-    AC_MSG_RESULT([      build with client support: "no"])
+    AC_MSG_RESULT([      build with client support      : "no"])
+fi
+if test "x$build_ipv4" != "xno"; then
+    AC_MSG_RESULT([      build with IPv4 support        : "yes"])
+else
+    AC_MSG_RESULT([      build with IPv4 support        : "no"])
+fi
+if test "x$build_ipv6" != "xno"; then
+    AC_MSG_RESULT([      build with IPv6 support        : "yes"])
+else
+    AC_MSG_RESULT([      build with IPv6 support        : "no"])
+fi
+if test "x$build_af_unix" != "xno"; then
+    AC_MSG_RESULT([      build with Unix socket support : "yes"])
+else
+    AC_MSG_RESULT([      build with Unix socket support : "no"])
 fi
 if test "x$build_tcp" != "xno"; then
-    AC_MSG_RESULT([      build with TCP support   : "yes"])
+    AC_MSG_RESULT([      build with TCP support         : "yes"])
 else
-    AC_MSG_RESULT([      build with TCP support   : "no"])
+    AC_MSG_RESULT([      build with TCP support         : "no"])
 fi
 if test "x$with_gnutls" = "xyes" -o "x$with_gnutls_auto" = "xyes"; then
-    AC_MSG_RESULT([      build DTLS support       : "yes"])
-    AC_MSG_RESULT([          -->  GnuTLS around   : "yes" (found GnuTLS $gnutls_version)])
-    AC_MSG_RESULT([               GNUTLS_CFLAGS   : "$GnuTLS_CFLAGS"])
-    AC_MSG_RESULT([               GNUTLS_LIBS     : "$GnuTLS_LIBS"])
+    AC_MSG_RESULT([      build DTLS support             : "yes"])
+    AC_MSG_RESULT([          -->  GnuTLS around         : "yes" (found GnuTLS $gnutls_version)])
+    AC_MSG_RESULT([               GNUTLS_CFLAGS         : "$GnuTLS_CFLAGS"])
+    AC_MSG_RESULT([               GNUTLS_LIBS           : "$GnuTLS_LIBS"])
 fi
 if test "x$with_openssl" = "xyes" -o "x$with_openssl_auto" = "xyes"; then
-    AC_MSG_RESULT([      build DTLS support       : "yes"])
-    AC_MSG_RESULT([         -->  OpenSSL around   : "yes" (found OpenSSL $openssl_version)])
-    AC_MSG_RESULT([              OPENSSL_CFLAGS   : "$OpenSSL_CFLAGS"])
-    AC_MSG_RESULT([              OPENSSL_LIBS     : "$OpenSSL_LIBS"])
+    AC_MSG_RESULT([      build DTLS support             : "yes"])
+    AC_MSG_RESULT([         -->  OpenSSL around         : "yes" (found OpenSSL $openssl_version)])
+    AC_MSG_RESULT([              OPENSSL_CFLAGS         : "$OpenSSL_CFLAGS"])
+    AC_MSG_RESULT([              OPENSSL_LIBS           : "$OpenSSL_LIBS"])
 fi
 if test "x$with_mbedtls" = "xyes" -o "x$with_mbedtls_auto" = "xyes"; then
-    AC_MSG_RESULT([      build DTLS support       : "yes"])
-    AC_MSG_RESULT([         -->  Mbed TLS around  : "yes" (found Mbed TLS $mbedtls_version)])
-    AC_MSG_RESULT([              MBEDTLS_CFLAGS   : "$MbedTLS_CFLAGS"])
-    AC_MSG_RESULT([              MBEDTLS_LIBS     : "$MbedTLS_LIBS"])
+    AC_MSG_RESULT([      build DTLS support             : "yes"])
+    AC_MSG_RESULT([         -->  Mbed TLS around        : "yes" (found Mbed TLS $mbedtls_version)])
+    AC_MSG_RESULT([              MBEDTLS_CFLAGS         : "$MbedTLS_CFLAGS"])
+    AC_MSG_RESULT([              MBEDTLS_LIBS           : "$MbedTLS_LIBS"])
 fi
 if test "x$with_tinydtls" = "xyes"; then
-    AC_MSG_RESULT([      build DTLS support       : "yes"])
+    AC_MSG_RESULT([      build DTLS support             : "yes"])
     if test "x$have_submodule_tinydtls" = "xyes"; then
-        AC_MSG_RESULT([         -->  TinyDTLS around  : "yes" (submodule)])
+        AC_MSG_RESULT([         -->  TinyDTLS around        : "yes" (submodule)])
     else
-        AC_MSG_RESULT([         -->  TinyDTLS around  : "yes (found TinyDTLS $tinydtls_version)"])
+        AC_MSG_RESULT([         -->  TinyDTLS around        : "yes (found TinyDTLS $tinydtls_version)"])
     fi
-    AC_MSG_RESULT([              TinyDTLS_CFLAGS  : "$DTLS_CFLAGS"])
-    AC_MSG_RESULT([              TinyDTLS_LIBS    : "$DTLS_LIBS"])
+    AC_MSG_RESULT([              TinyDTLS_CFLAGS        : "$DTLS_CFLAGS"])
+    AC_MSG_RESULT([              TinyDTLS_LIBS          : "$DTLS_LIBS"])
 fi
 if test "x$build_dtls" != "xyes"; then
-    AC_MSG_RESULT([      build DTLS support       : "no"])
+    AC_MSG_RESULT([      build DTLS support             : "no"])
 fi
 if test "x$build_add_default_names" = "xyes"; then
-    AC_MSG_RESULT([      add default names        : "yes"])
+    AC_MSG_RESULT([      add default names              : "yes"])
 else
-    AC_MSG_RESULT([      add default names        : "no"])
+    AC_MSG_RESULT([      add default names              : "no"])
+fi
+if test "x$build_observe_persist" = "xyes"; then
+    AC_MSG_RESULT([      build Observe Persist          : "yes"])
+else
+    AC_MSG_RESULT([      build Observe Persist          : "no"])
 fi
 if test "x$have_epoll" = "xyes"; then
-    AC_MSG_RESULT([      build using epoll        : "$with_epoll"])
+    AC_MSG_RESULT([      build using epoll              : "$with_epoll"])
 fi
-AC_MSG_RESULT([      enable small stack size  : "$enable_small_stack"])
+AC_MSG_RESULT([      enable small stack size        : "$enable_small_stack"])
 if test "x$build_async" != "xno"; then
-    AC_MSG_RESULT([      enable separate responses: "yes"])
+    AC_MSG_RESULT([      enable separate responses      : "yes"])
 else
-    AC_MSG_RESULT([      enable separate responses: "no"])
+    AC_MSG_RESULT([      enable separate responses      : "no"])
+fi
+if test "x$build_oscore" != "xno"; then
+    AC_MSG_RESULT([      enable OSCORE support          : "yes"])
+else
+    AC_MSG_RESULT([      enable OSCORE support          : "no"])
+fi
+if test "x$build_q_block" != "xno"; then
+    AC_MSG_RESULT([      enable Q-Block support         : "yes"])
+else
+    AC_MSG_RESULT([      enable Q-Block support         : "no"])
+fi
+if test "x$enable_max_logging_level" != "x8"; then
+    AC_MSG_RESULT([      enable max logging level       : "$enable_max_logging_level"])
+else
+    AC_MSG_RESULT([      enable max logging level       : "none"])
 fi
 if test "x$build_doxygen" = "xyes"; then
-    AC_MSG_RESULT([      build doxygen pages      : "yes"])
-    AC_MSG_RESULT([          --> Doxygen around   : "yes" ($DOXYGEN $doxygen_version)])
+    AC_MSG_RESULT([      build doxygen pages            : "yes"])
+    AC_MSG_RESULT([          --> Doxygen around         : "yes" ($DOXYGEN $doxygen_version)])
     if test "x$DOT" = "x"; then
-        AC_MSG_RESULT([             -->  dot around   : "no" (DOT not found!)])
+        AC_MSG_RESULT([             -->  dot around         : "no" (DOT not found!)])
     else
-        AC_MSG_RESULT([             -->  dot around   : "yes" ($DOT $dot_version)])
+        AC_MSG_RESULT([             -->  dot around         : "yes" ($DOT $dot_version)])
     fi
 else
     if test "x$build_doxygen" = "xno"; then
-        AC_MSG_RESULT([      build doxygen pages      : "no"])
+        AC_MSG_RESULT([      build doxygen pages            : "no"])
     fi
 fi
 if test "x$build_manpages" = "xyes"; then
-    AC_MSG_RESULT([      build man pages          : "yes"])
+    AC_MSG_RESULT([      build man pages                : "yes"])
 else
-    AC_MSG_RESULT([      build man pages          : "no"])
+    AC_MSG_RESULT([      build man pages                : "no"])
 fi
 if test "x$build_tests" = "xyes"; then
-    AC_MSG_RESULT([      build unit test binary   : "yes"])
+    AC_MSG_RESULT([      build unit test binary         : "yes"])
 else
-    AC_MSG_RESULT([      build unit test binary   : "no"])
+    AC_MSG_RESULT([      build unit test binary         : "no"])
 fi
 if test "x$build_examples" = "xyes"; then
-    AC_MSG_RESULT([      build examples           : "yes"])
+    AC_MSG_RESULT([      build examples                 : "yes"])
 else
-    AC_MSG_RESULT([      build examples           : "no"])
+    AC_MSG_RESULT([      build examples                 : "no"])
 fi
 if test "x$build_examples_source" = "xyes"; then
-    AC_MSG_RESULT([      install examples source  : "yes"])
+    AC_MSG_RESULT([      install examples source        : "yes"])
 else
-    AC_MSG_RESULT([      install examples source  : "no"])
+    AC_MSG_RESULT([      install examples source        : "no"])
 fi
 if test "x$build_gcov" = "xyes"; then
-    AC_MSG_RESULT([      build with gcov support  : "yes"])
+    AC_MSG_RESULT([      build with gcov support        : "yes"])
 else
-    AC_MSG_RESULT([      build with gcov support  : "no"])
+    AC_MSG_RESULT([      build with gcov support        : "no"])
 fi
 if test "x$enable_shared" = "xyes"; then
-    AC_MSG_RESULT([      build shared library     : "yes"])
+    AC_MSG_RESULT([      build shared library           : "yes"])
 else
-    AC_MSG_RESULT([      build shared library     : "no"])
+    AC_MSG_RESULT([      build shared library           : "no"])
 fi
 if test "x$enable_static" = "xyes"; then
-    AC_MSG_RESULT([      build static library     : "yes"])
+    AC_MSG_RESULT([      build static library           : "yes"])
 else
-    AC_MSG_RESULT([      build static library     : "no"])
+    AC_MSG_RESULT([      build static library           : "no"])
 fi

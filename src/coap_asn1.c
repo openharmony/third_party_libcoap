@@ -1,6 +1,6 @@
 /* coap_asn1.c -- ASN.1 handling functions
 *
-* Copyright (C) 2020 Jon Shallow <supjps-libcoap@jpshallow.com>
+* Copyright (C) 2020-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
 *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -16,8 +16,7 @@
 #include "coap3/coap_internal.h"
 
 size_t
-asn1_len(const uint8_t **ptr)
-{
+asn1_len(const uint8_t **ptr) {
   size_t len = 0;
 
   if ((**ptr) & 0x80) {
@@ -28,8 +27,7 @@ asn1_len(const uint8_t **ptr)
       (*ptr)++;
       octets--;
     }
-  }
-  else {
+  } else {
     len = (**ptr) & 0x7f;
     (*ptr)++;
   }
@@ -37,14 +35,13 @@ asn1_len(const uint8_t **ptr)
 }
 
 coap_asn1_tag_t
-asn1_tag_c(const uint8_t **ptr, int *constructed, int *class)
-{
+asn1_tag_c(const uint8_t **ptr, int *constructed, int *cls) {
   coap_asn1_tag_t tag = 0;
   uint8_t byte;
 
   byte = (**ptr);
   *constructed = (byte & 0x20) ? 1 : 0;
-  *class = byte >> 6;
+  *cls = byte >> 6;
   tag = byte & 0x1F;
   (*ptr)++;
   if (tag < 0x1F)
@@ -66,8 +63,7 @@ asn1_tag_c(const uint8_t **ptr, int *constructed, int *class)
 /* caller must free off returned coap_binary_t* */
 coap_binary_t *
 get_asn1_tag(coap_asn1_tag_t ltag, const uint8_t *ptr, size_t tlen,
-             asn1_validate validate)
-{
+             asn1_validate validate) {
   int constructed;
   int class;
   const uint8_t *acp = ptr;
@@ -104,4 +100,3 @@ get_asn1_tag(coap_asn1_tag_t ltag, const uint8_t *ptr, size_t tlen,
   }
   return NULL;
 }
-

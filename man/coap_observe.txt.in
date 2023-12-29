@@ -1,8 +1,8 @@
 // -*- mode:doc; -*-
-// vim: set syntax=asciidoc,tw=0:
+// vim: set syntax=asciidoc tw=0
 
 coap_observe(3)
-=================
+===============
 :doctype: manpage
 :man source:   coap_observe
 :man version:  @PACKAGE_VERSION@
@@ -15,7 +15,7 @@ coap_resource_set_get_observable,
 coap_resource_notify_observers,
 coap_cancel_observe,
 coap_session_set_no_observe_cancel
-- work with CoAP observe
+- Work with CoAP observe
 
 SYNOPSIS
 --------
@@ -40,8 +40,8 @@ or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 
 DESCRIPTION
 -----------
-RFC 7641 extends the CoAP protocol to be able to monitor the state of a
-resource over time.
+https://rfc-editor.org/rfc/rfc7641[RFC7641] extends the CoAP protocol to be
+able to monitor the state of a resource over time.
 
 This enables clients to "observe" resources with a defined query, i.e., to
 retrieve a representation of a resource and keep this representation updated
@@ -51,7 +51,8 @@ The server has to flag a resource as "observable", and then the client has
 to request in a GET request that it wants to observe this resource by the use
 of the COAP_OPTION_OBSERVE Option with a value of COAP_OBSERVE_ESTABLISH.
 Optionally, the client can specify query options for the resource, or by using
-a FETCH request instead of a GET to define a query (RFC8132).
+a FETCH request instead of a GET to define a query
+(https://rfc-editor.org/rfc/rfc8132[RFC8132]).
 
 To remove the "observe" subscription, the client has to issue a GET (or FETCH)
 request with the COAP_OPTION_OBSERVE Option with a value of
@@ -61,6 +62,9 @@ initial "observe" request. Alternatively, "observe" can be cancelled using
 
 The underlying library adds in and removes "subscribers" to "observe" the
 resource as appropriate in the server side logic.
+
+*NOTE:* COAP_RESOURCE_MAX_SUBSCRIBER may have been defined to limit the number
+of subscribers to a resource when libcoap was built.
 
 Within the server application, it needs to determine that there is a change of
 state of the resource under observation, and then cause the CoAP library
@@ -76,10 +80,17 @@ requests".
 
 Whenever the server sends a copy of the state of the "observed" resource to
 the client, it will use the same token used by the client when the client
-requested the "observe".  The client will receive this observe response
-in the handler defined by *coap_register_response_handler*(3).  It is the
-responsibility of the client application to match the supplied token and
-update the appropriate internal information.
+requested the "observe" (or the last token used for a FETCH that spans
+multiple blocks).  The client will receive this observe response
+in the handler defined by *coap_register_response_handler*(3) (with the token
+updated to the initial token used by the client application for a large FETCH).
+It is the responsibility of the client application to match the supplied token
+and update the appropriate internal information.
+
+FUNCTIONS
+---------
+
+*Function: coap_resource_set_get_observable()*
 
 The *coap_resource_set_get_observable*() function enables or disables the
 observable status of the _resource_ by the setting of _mode_.  If _mode_ is
@@ -96,29 +107,37 @@ manage the deletion of the resource at the appropriate time.
 *NOTE:* The type (confirmable or non-confirmable) of the triggered observe
 GET response is determined not by the initial GET/FETCH request, but
 independently by the server as per
-https://tools.ietf.org/html/rfc7641#section-3.5.  This is controlled by the
-flags (one of COAP_RESOURCE_FLAGS_NOTIFY_NON,
+"https://rfc-editor.org/rfc/rfc7641#section-3.5[RFC7641 3.5. Transmission]".
+This is controlled by the flags (one of COAP_RESOURCE_FLAGS_NOTIFY_NON,
 COAP_RESOURCE_FLAGS_NOTIFY_NON_ALWAYS or COAP_RESOURCE_FLAGS_NOTIFY_CON)
 used when creating the resource using *coap_resource_init*(3).
 
 *NOTE:* Furthermore, the server must send at least one "observe" response as
 confirmable, when generally sending non-confirmable, at least every 24 hours
-as per https://tools.ietf.org/html/rfc7641#section-4.5.
+as per "https://rfc-editor.org/rfc/rfc7641#section-4.5[RFC7641
+4.5. Transmission]".
 Libcoap automatically handles this by sending every fifth (COAP_OBS_MAX_NON)
 response as a confirmable response for detection that the client is still
 responding unless if COAP_RESOURCE_FLAGS_NOTIFY_NON_ALWAYS is set, which is a
-RFC7641 violation, where non-confirmable "observe" responses are always sent
+"https://rfc-editor.org/rfc/rfc7641#section-4.5[RFC7641 4.5. Transmission]"
+violation, where non-confirmable "observe" responses are always sent
 as required by some higher layer protocols.
+
+*Function: coap_resource_notify_observers()*
 
 The *coap_resource_notify_observers*() function needs to be called whenever the
 server application determines that there has been a change to the state of
 _resource_.  The _query_ parameter is obsolete and ignored.
+
+*Function: coap_cancel_observe()*
 
 The *coap_cancel_observe*() function can be used by the client to cancel an
 observe request that is being tracked. This will cause the
 appropriate PDU to be sent to the server to cancel the observation, based on
 the _session_ and _token_ used to set up the observe and the PDU is of type
 _message_type_ (use COAP_MESSAGE_NON or COAP_MESSAGE_CON).
+
+*Function: coap_session_set_no_observe_cancel()*
 
 The *coap_session_set_no_observe_cancel*() function can be called by the
 client to disable calling *coap_cancel_observe*() when the _session_ is being
@@ -127,10 +146,10 @@ by the client application.
 
 RETURN VALUES
 -------------
-The *coap_resource_set_get_observable*() function return 0 on failure, 1 on
-success.
+*coap_resource_notify_observers*() returns 0 if not observable or
+no observers, 1 on success.
 
-The *coap_cancel_observe*() function return 0 on failure, 1 on success.
+*coap_cancel_observe*() returns 0 on failure, 1 on success.
 
 EXAMPLES
 --------
@@ -245,13 +264,18 @@ init_resources(coap_context_t *ctx)
 
 }
 
-int main(int argc, char *argv[]){
+int
+main(int argc, char *argv[]) {
 
   coap_context_t *ctx = NULL;
   coap_endpoint_t *ep = NULL;
   coap_address_t addr;
   unsigned wait_ms;
   struct timeval tv_last = {0, 0};
+
+  /* Initialize libcoap library */
+  coap_startup();
+
   /* Remove (void) definition if variable is used */
   (void)argc;
   (void)argv;
@@ -310,6 +334,8 @@ int main(int argc, char *argv[]){
       }
     }
   }
+  coap_free_context(ctx);
+  coap_cleanup();
   exit(0);
 
 }
@@ -347,7 +373,7 @@ coap_optlist_t **options, unsigned char *data, size_t length, int observe) {
    */
   token++;
   if (!coap_add_token(pdu, sizeof(token), (unsigned char*)&token)) {
-    coap_log(LOG_DEBUG, "cannot add token to request\n");
+    coap_log_debug("cannot add token to request\n");
     goto error;
   }
 
@@ -383,16 +409,21 @@ error:
 
 SEE ALSO
 --------
-*coap_block*(3), *coap_context*(3), *coap_handler*(3),
+*coap_block*(3), *coap_context*(3), *coap_handler*(3), *coap_init*(3),
 *coap_pdu_setup*(3), *coap_resource*(3) and *coap_session*(3)
 
 FURTHER INFORMATION
 -------------------
-"RFC7252: The Constrained Application Protocol (CoAP)"
+See
 
-"RFC7641: Observing Resources in the Constrained Application Protocol (CoAP)"
+"https://rfc-editor.org/rfc/rfc7252[RFC7252: The Constrained Application Protocol (CoAP)]"
 
-"RFC8132: PATCH and FETCH Methods for the Constrained Application Protocol (CoAP)"
+"https://rfc-editor.org/rfc/rfc7641[RFC7641: Observing Resources in the Constrained Application Protocol (CoAP)]"
+
+"https://rfc-editor.org/rfc/rfc8132[RFC8132: PATCH and FETCH Methods for the Constrained Application Protocol (CoAP)]"
+
+for further information.
+
 
 BUGS
 ----

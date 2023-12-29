@@ -1,7 +1,7 @@
 /*
  * coap_pdu_internal.h -- CoAP PDU structure
  *
- * Copyright (C) 2010-2022 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -44,6 +44,17 @@
 #define COAP_MAX_MESSAGE_SIZE_TCP8 (COAP_MESSAGE_SIZE_OFFSET_TCP16-1) /* 268 */
 #define COAP_MAX_MESSAGE_SIZE_TCP16 (COAP_MESSAGE_SIZE_OFFSET_TCP32-1) /* 65804 */
 #define COAP_MAX_MESSAGE_SIZE_TCP32 (COAP_MESSAGE_SIZE_OFFSET_TCP32+0xFFFFFFFF)
+#if COAP_OSCORE_SUPPORT
+/* for oscore encryption   */
+#define COAP_MAX_CHUNK_SIZE COAP_DEFAULT_MAX_PDU_RX_SIZE
+#define OSCORE_CRYPTO_BUFFER_SIZE (COAP_MAX_CHUNK_SIZE+16)
+#endif /* COAP_OSCORE_SUPPORT  */
+
+/* Extended Token constants */
+#define COAP_TOKEN_EXT_1B_TKL 13
+#define COAP_TOKEN_EXT_2B_TKL 14
+#define COAP_TOKEN_EXT_1B_BIAS 13
+#define COAP_TOKEN_EXT_2B_BIAS 269 /* 13 + 256 */
 
 #ifndef COAP_DEBUG_BUF_SIZE
 #if defined(WITH_CONTIKI) || defined(WITH_LWIP)
@@ -55,8 +66,10 @@
 #endif /* COAP_DEBUG_BUF_SIZE */
 
 #ifndef COAP_DEFAULT_MAX_PDU_RX_SIZE
-#if defined(WITH_CONTIKI) || defined(WITH_LWIP)
+#if defined(WITH_LWIP)
 #define COAP_DEFAULT_MAX_PDU_RX_SIZE (COAP_MAX_MESSAGE_SIZE_TCP16+4UL)
+#elif defined(WITH_CONTIKI)
+#define COAP_DEFAULT_MAX_PDU_RX_SIZE (sizeof(coap_packet_t) + UIP_APPDATA_SIZE)
 #else
 /* 8 MiB max-message-size plus some space for options */
 #define COAP_DEFAULT_MAX_PDU_RX_SIZE (8UL*1024*1024+256)
@@ -97,7 +110,7 @@
  *
  * allocated buffer always starts max_hdr_size before token.
  *
- * options starts at token + token_length.
+ * options starts at token + e_token_length.
  * payload starts at data, its length is used_size - (data - token).
  *
  * alloc_size, used_size and max_size are the offsets from token.
@@ -112,16 +125,19 @@ struct coap_pdu_t {
   uint8_t max_hdr_size;     /**< space reserved for protocol-specific header */
   uint8_t hdr_size;         /**< actual size used for protocol-specific
                                  header (0 until header is encoded) */
-  uint8_t token_length;     /**< length of Token */
   uint8_t crit_opt;         /**< Set if unknown critical option for proxy */
   uint16_t max_opt;         /**< highest option number in PDU */
+  uint32_t e_token_length;  /**< length of Token space (includes leading
+                                 extended bytes */
+  coap_bin_const_t actual_token; /**< Actual token in pdu */
   size_t alloc_size;        /**< allocated storage for token, options and
                                  payload */
   size_t used_size;         /**< used bytes of storage for token, options and
                                  payload */
   size_t max_size;          /**< maximum size for token, options and payload,
                                  or zero for variable size pdu */
-  uint8_t *token;           /**< first byte of token, if any, or options */
+  uint8_t *token;           /**< first byte of token (or extended length bytes
+                                 prefix), if any, or options */
   uint8_t *data;            /**< first byte of payload, if any */
 #ifdef WITH_LWIP
   struct pbuf *pbuf;        /**< lwIP PBUF. The package data will always reside
@@ -139,6 +155,7 @@ struct coap_pdu_t {
   size_t body_total;        /**< Holds body data total size */
   coap_lg_xmit_t *lg_xmit;  /**< Holds ptr to lg_xmit if sending a set of
                                  blocks */
+  coap_session_t *session;  /**< Session responsible for PDU or NULL */
 };
 
 /**
@@ -173,7 +190,7 @@ int coap_pdu_check_resize(coap_pdu_t *pdu, size_t new_size);
 * @return       A value greater than zero on success or @c 0 on error.
 */
 size_t coap_pdu_parse_header_size(coap_proto_t proto,
-                                 const uint8_t *data);
+                                  const uint8_t *data);
 
 /**
  * Parses @p data to extract the message size.
@@ -184,7 +201,7 @@ size_t coap_pdu_parse_header_size(coap_proto_t proto,
  * @param data   The raw data to parse as CoAP PDU.
  * @param length The actual size of @p data.
  *
- * @return       A value greater than zero on success or @c 0 on error.
+ * @return       PDU size including token on success or @c 0 on error.
  */
 size_t coap_pdu_parse_size(coap_proto_t proto,
                            const uint8_t *data,
@@ -299,7 +316,7 @@ size_t coap_update_option(coap_pdu_t *pdu,
 
 size_t coap_pdu_encode_header(coap_pdu_t *pdu, coap_proto_t proto);
 
- /**
+/**
  * Updates token in @p pdu with length @p len and @p data.
  * This function returns @c 0 on error or a value greater than zero on success.
  *
@@ -312,6 +329,16 @@ size_t coap_pdu_encode_header(coap_pdu_t *pdu, coap_proto_t proto);
 int coap_update_token(coap_pdu_t *pdu,
                       size_t len,
                       const uint8_t *data);
+
+/**
+ * Check whether the option is allowed to be repeated or not.
+ * This function returns @c 0 if not repeatable or @c 1 if repeatable
+ *
+ * @param number The option number to check for repeatability.
+ *
+ * @return     @c 0 if not repeatable or @c 1 if repeatable.
+ */
+int coap_option_check_repeatable(coap_option_num_t number);
 
 /** @} */
 

@@ -1,7 +1,7 @@
 /*
  * coap_debug.h -- debug utilities
  *
- * Copyright (C) 2010-2011,2014-2022 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2011,2014-2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -26,92 +26,186 @@
 
 #ifndef COAP_DEBUG_FD
 /**
- * Used for output for @c LOG_DEBUG to @c LOG_ERR.
+ * Used for output for @c COAP_LOG_OSCORE to @c COAP_LOG_ERR.
  */
 #define COAP_DEBUG_FD stdout
 #endif
 
 #ifndef COAP_ERR_FD
 /**
- * Used for output for @c LOG_CRIT to @c LOG_EMERG.
+ * Used for output for @c COAP_LOG_CRIT to @c COAP_LOG_EMERG.
  */
 #define COAP_ERR_FD stderr
 #endif
 
+#ifndef COAP_MAX_LOGGING_LEVEL
+#define COAP_MAX_LOGGING_LEVEL 8
+#endif /* ! COAP_MAX_LOGGING_LEVEL */
+
 /**
- * Logging type.  One of LOG_* from @b syslog.
+ * Logging type.  These should be used where possible in the code instead
+ * of the syslog definitions, or alternatively use the coap_log_*() functions
+ * to reduce line length.
  */
-typedef int coap_log_t;
+typedef enum {
+  COAP_LOG_EMERG = 0,  /* 0 */
+  COAP_LOG_ALERT,      /* 1 */
+  COAP_LOG_CRIT,       /* 2 */
+  COAP_LOG_ERR,        /* 3 */
+  COAP_LOG_WARN,       /* 4 */
+  COAP_LOG_NOTICE,     /* 5 */
+  COAP_LOG_INFO,       /* 6 */
+  COAP_LOG_DEBUG,      /* 7 */
+  COAP_LOG_OSCORE,     /* 8 */
+  COAP_LOG_DTLS_BASE,
+#define COAP_LOG_CIPHERS COAP_LOG_DTLS_BASE /* For backward compatability */
+} coap_log_t;
 
-#ifdef HAVE_SYSLOG_H
-#include <syslog.h>
+/*
+ * These have the same values, but can be used in #if tests for better
+ * readability
+ */
+#define _COAP_LOG_EMERG  0
+#define _COAP_LOG_ALERT  1
+#define _COAP_LOG_CRIT   2
+#define _COAP_LOG_ERR    3
+#define _COAP_LOG_WARN   4
+#define _COAP_LOG_NOTICE 5
+#define _COAP_LOG_INFO   6
+#define _COAP_LOG_DEBUG  7
+#define _COAP_LOG_OSCORE 8
+
+COAP_STATIC_INLINE void
+coap_no_log(void) { }
+
+#define coap_log_emerg(...) coap_log(COAP_LOG_EMERG, __VA_ARGS__)
+
+#if (COAP_MAX_LOGGING_LEVEL >= _COAP_LOG_ALERT)
+#define coap_log_alert(...) coap_log(COAP_LOG_ALERT, __VA_ARGS__)
 #else
-#if defined(RIOT_VERSION)
-/* RIOT defines a subset of the syslog levels in log.h with different
- * numeric values. The remaining levels are defined here. Note that
- * output granularity differs from what would be expected when
- * adhering to the syslog levels.
- */
-#include <log.h>
-#endif /* RIOT_VERSION */
-#endif /* HAVE_SYSLOG_H */
+#define coap_log_alert(...) coap_no_log()
+#endif
 
+#if (COAP_MAX_LOGGING_LEVEL >= _COAP_LOG_CRIT)
+#define coap_log_crit(...) coap_log(COAP_LOG_CRIT, __VA_ARGS__)
+#else
+#define coap_log_crit(...) coap_no_log()
+#endif
+
+#if (COAP_MAX_LOGGING_LEVEL >= _COAP_LOG_ERR)
+#define coap_log_err(...) coap_log(COAP_LOG_ERR, __VA_ARGS__)
+#else
+#define coap_log_err(...) coap_no_log()
+#endif
+
+#if (COAP_MAX_LOGGING_LEVEL >= _COAP_LOG_WARN)
+#define coap_log_warn(...) coap_log(COAP_LOG_WARN, __VA_ARGS__)
+#else
+#define coap_log_warn(...) coap_no_log()
+#endif
+
+#if (COAP_MAX_LOGGING_LEVEL >= _COAP_LOG_INFO)
+#define coap_log_info(...) coap_log(COAP_LOG_INFO, __VA_ARGS__)
+#else
+#define coap_log_info(...) coap_no_log()
+#endif
+
+#if (COAP_MAX_LOGGING_LEVEL >= _COAP_LOG_NOTICE)
+#define coap_log_notice(...) coap_log(COAP_LOG_NOTICE, __VA_ARGS__)
+#else
+#define coap_log_notice(...) coap_no_log()
+#endif
+
+#if (COAP_MAX_LOGGING_LEVEL >= _COAP_LOG_DEBUG)
+#define coap_log_debug(...) coap_log(COAP_LOG_DEBUG, __VA_ARGS__)
+#else
+#define coap_log_debug(...) coap_no_log()
+#endif
+
+#if (COAP_MAX_LOGGING_LEVEL >= _COAP_LOG_OSCORE)
+#define coap_log_oscore(...) coap_log(COAP_LOG_OSCORE, __VA_ARGS__)
+#else
+#define coap_log_oscore(...) coap_no_log()
+#endif
+
+/*
+ * These entries are left here for backward compatability in applications
+ * (which should really "#include <syslog.h>").
+ * and MUST NOT be used anywhere within the libcoap code.
+ *
+ * If clashes occur during a particilar OS port, they can be safely deleted.
+ *
+ * In a future update, they will get removed.
+ */
+#if !defined(RIOT_VERSION) && !defined(WITH_LWIP) && !defined(WITH_CONTIKI)
 #ifndef LOG_EMERG
-# define LOG_EMERG  0
+# define LOG_EMERG  COAP_LOG_EMERG
 #endif
 #ifndef LOG_ALERT
-# define LOG_ALERT  1
+# define LOG_ALERT  COAP_LOG_ALERT
 #endif
 #ifndef LOG_CRIT
-# define LOG_CRIT   2
+# define LOG_CRIT   COAP_LOG_CRIT
 #endif
 #ifndef LOG_ERR
-# define LOG_ERR    3
+# define LOG_ERR    COAP_LOG_ERR
 #endif
 #ifndef LOG_WARNING
-# define LOG_WARNING 4
+# define LOG_WARNING COAP_LOG_WARN
 #endif
 #ifndef LOG_NOTICE
-# define LOG_NOTICE 5
+# define LOG_NOTICE COAP_LOG_NOTICE
 #endif
 #ifndef LOG_INFO
-# define LOG_INFO   6
+# define LOG_INFO   COAP_LOG_INFO
 #endif
 #ifndef LOG_DEBUG
-# define LOG_DEBUG  7
+# define LOG_DEBUG  COAP_LOG_DEBUG
 #endif
-/*
-   LOG_DEBUG+2 gives ciphers in GnuTLS
-   Use COAP_LOG_CIPHERS to output Cipher Info in OpenSSL etc.
- */
-#define COAP_LOG_CIPHERS (LOG_DEBUG+2)
+#endif /* ! RIOT_VERSION && ! WITH_LWIP && ! WITH_CONTIKI */
 
 /**
  * Get the current logging level.
  *
- * @return One of the LOG_* values.
+ * @return One of the COAP_LOG_* values.
  */
 coap_log_t coap_get_log_level(void);
 
 /**
  * Sets the log level to the specified value.
  *
- * @param level One of the LOG_* values.
+ * @param level One of the COAP_LOG_* values.
  */
 void coap_set_log_level(coap_log_t level);
 
 /**
+ * Sets the (D)TLS logging level to the specified @p level.
+ *
+ * @param level One of the COAP_LOG_* values.
+ */
+void coap_dtls_set_log_level(coap_log_t level);
+
+/**
+ * Get the current (D)TLS logging.
+ *
+ * @return One of the COAP_LOG_* values.
+ */
+coap_log_t coap_dtls_get_log_level(void);
+
+/**
  * Logging callback handler definition.
  *
- * @param level One of the LOG_* values.
+ * @param level One of the COAP_LOG_* values, or if used for (D)TLS logging,
+ *              COAP_LOG_DTLS_BASE + one of the COAP_LOG_* values.
  * @param message Zero-terminated string message to log.
  */
-typedef void (*coap_log_handler_t) (coap_log_t level, const char *message);
+typedef void (*coap_log_handler_t)(coap_log_t level, const char *message);
 
 /**
  * Add a custom log callback handler.
  *
  * @param handler The logging handler to use or @p NULL to use default handler.
+ *                 This handler will be used for both CoAP and (D)TLS logging.
  */
 void coap_set_log_handler(coap_log_handler_t handler);
 
@@ -137,38 +231,72 @@ const char *coap_package_version(void);
 const char *coap_package_build(void);
 
 /**
- * Writes the given text to @c COAP_ERR_FD (for @p level <= @c LOG_CRIT) or @c
- * COAP_DEBUG_FD (for @p level >= @c LOG_ERR). The text is output only when
- * @p level is below or equal to the log level that set by coap_set_log_level().
+ * Writes the given text to @c COAP_ERR_FD (for @p level <= @c COAP_LOG_CRIT) or
+ * @c COAP_DEBUG_FD (for @p level >= @c COAP_LOG_ERR). The text is output only
+ * when @p level is below or equal to the log level that set by
+ * coap_set_log_level().
  *
  * Internal function.
  *
- * @param level One of the LOG_* values.
+ * @param level One of the COAP_LOG_* values.
  & @param format The format string to use.
  */
 #if (defined(__GNUC__))
 void coap_log_impl(coap_log_t level,
-              const char *format, ...) __attribute__ ((format(printf, 2, 3)));
+                   const char *format, ...) __attribute__((format(printf, 2, 3)));
 #else
 void coap_log_impl(coap_log_t level, const char *format, ...);
 #endif
 
 #ifndef coap_log
-/**
- * Logging function.
- * Writes the given text to @c COAP_ERR_FD (for @p level <= @c LOG_CRIT) or @c
- * COAP_DEBUG_FD (for @p level >= @c LOG_ERR). The text is output only when
- * @p level is below or equal to the log level that set by coap_set_log_level().
- *
- * @param level One of the LOG_* values.
- */
-#define coap_log(level, ...) do { \
-  if ((int)((level))<=(int)coap_get_log_level()) \
-     coap_log_impl((level), __VA_ARGS__); \
-} while(0)
+#ifdef WITH_CONTIKI
+#include <stdio.h>
+
+#ifndef LOG_CONF_LEVEL_COAP
+#define LOG_CONF_LEVEL_COAP 0 /* = LOG_LEVEL_NONE */
 #endif
 
-#include "pdu.h"
+void coap_print_contiki_prefix(coap_log_t level);
+
+#define coap_log(level, ...) do { \
+    if (LOG_CONF_LEVEL_COAP && \
+        ((int)((level)) <= (int)coap_get_log_level())) { \
+      coap_print_contiki_prefix(level); \
+      printf(__VA_ARGS__); \
+    } \
+  } while(0)
+#else /* !WITH_CONTIKI */
+/**
+ * Logging function.
+ * Writes the given text to @c COAP_ERR_FD (for @p level <= @c COAP_LOG_CRIT) or @c
+ * COAP_DEBUG_FD (for @p level >= @c COAP_LOG_ERR). The text is output only when
+ * @p level is below or equal to the log level that set by coap_set_log_level().
+ *
+ * @param level One of the COAP_LOG_* values.
+ */
+#define coap_log(level, ...) do { \
+    if ((int)((level))<=(int)coap_get_log_level()) \
+      coap_log_impl((level), __VA_ARGS__); \
+  } while(0)
+#endif /* !WITH_CONTIKI */
+#endif
+
+#ifndef coap_dtls_log
+/**
+ * Logging function.
+ * Writes the given text to @c COAP_ERR_FD (for @p level <= @c COAP_LOG_CRIT) or @c
+ * COAP_DEBUG_FD (for @p level >= @c COAP_LOG_ERR). The text is output only when
+ * @p level is below or equal to the log level that set by coap_dtls_set_log_level().
+ *
+ * @param level One of the COAP_LOG_* values.
+ */
+#define coap_dtls_log(level, ...) do { \
+    if ((int)((level))<=(int)coap_dtls_get_log_level()) \
+      coap_log_impl((level)+COAP_LOG_DTLS_BASE, __VA_ARGS__); \
+  } while(0)
+#endif
+
+#include "coap_pdu.h"
 
 /**
  * Defines the output mode for the coap_show_pdu() function.
@@ -219,8 +347,6 @@ char *coap_string_tls_support(char *buffer, size_t bufsize);
 /**
  * Print the address into the defined buffer.
  *
- * Internal Function.
- *
  * @param address The address to print.
  * @param buffer The buffer to print into.
  * @param size The size of the buffer to print into.
@@ -229,6 +355,19 @@ char *coap_string_tls_support(char *buffer, size_t bufsize);
  */
 size_t coap_print_addr(const coap_address_t *address,
                        unsigned char *buffer, size_t size);
+
+/**
+ * Print the IP address into the defined buffer.
+ *
+ * @param address The address to print.
+ * @param buffer The buffer to print into.
+ * @param size The size of the buffer to print into.
+ *
+ * @return The pointer to provided buffer with as much of the IP address added
+ *         as possible.
+ */
+const char *coap_print_ip_addr(const coap_address_t *address,
+                               char *buffer, size_t size);
 
 /** @} */
 
@@ -246,15 +385,5 @@ size_t coap_print_addr(const coap_address_t *address,
  * @return @c 1 If loss level set, @c 0 if there is an error.
  */
 int coap_debug_set_packet_loss(const char *loss_level);
-
-/**
- * Check to see whether a packet should be sent or not.
- *
- * Internal function
- *
- * @return @c 1 if packet is to be sent, @c 0 if packet is to be dropped.
- */
-int coap_debug_send_packet(void);
-
 
 #endif /* COAP_DEBUG_H_ */

@@ -1,8 +1,8 @@
 # Makefile.am for libcoap
 #
-# Copyright (C) 2010-2022 Olaf Bergmann <bergmann@tzi.org>
+# Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
 # Copyright (C) 2015-2017 Carsten Schoenert <c.schoenert@t-online.de>
-# Copyright (C) 2018-2022 Jon Shallow <supjps-libcoap@jpshallow.com>
+# Copyright (C) 2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
@@ -17,6 +17,14 @@ ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS} -I m4
 
 LIBCOAP_PACKAGE_BUILD = @DOLLAR_SIGN@(shell git describe --tags --dirty --always 2>/dev/null || echo @PACKAGE_VERSION@)
 
+## Source files specifically for OSCORE
+libcoap_OSCORE_sources = \
+  src/oscore/oscore.c \
+  src/oscore/oscore_cbor.c \
+  src/oscore/oscore_context.c \
+  src/oscore/oscore_cose.c \
+  src/oscore/oscore_crypto.c
+
 ## Additional files for the distribution archive
 EXTRA_DIST = \
   BUILDING \
@@ -28,7 +36,7 @@ EXTRA_DIST = \
   cmake/Config.cmake.in \
   cmake/FindMbedTLS.cmake \
   cmake/FindTinyDTLS.cmake \
-  coap_config.h.lwip \
+  coap_config.h.contiki \
   coap_config.h.riot \
   coap_config.h.windows \
   libcoap-$(LIBCOAP_API_VERSION).pc.in \
@@ -36,30 +44,88 @@ EXTRA_DIST = \
   libcoap-$(LIBCOAP_API_VERSION).sym \
   examples/coap_list.h \
   examples/getopt.c \
+  examples/contiki/coap_config.h \
+  examples/contiki/Makefile \
+  examples/contiki/Makefile.contiki \
+  examples/contiki/project-conf.h \
+  examples/contiki/README \
+  examples/contiki/server.c \
+  examples/lwip/client.c \
+  examples/lwip/client-coap.c \
+  examples/lwip/client-coap.h \
+  examples/lwip/Makefile \
+  examples/lwip/README \
+  examples/lwip/server.c \
+  examples/lwip/server-coap.c \
+  examples/lwip/server-coap.h \
+  examples/lwip/config/coap_config.h \
+  examples/lwip/config/coap_config.h.in \
+  examples/lwip/config/lwipopts.h \
+  examples/lwip/config/lwippools.h \
+  examples/riot/examples_libcoap_client/client-coap.c \
+  examples/riot/examples_libcoap_client/client-coap.h \
+  examples/riot/examples_libcoap_client/Kconfig \
+  examples/riot/examples_libcoap_client/main.c \
+  examples/riot/examples_libcoap_client/Makefile \
+  examples/riot/examples_libcoap_client/Makefile.ci \
+  examples/riot/examples_libcoap_client/README.md \
+  examples/riot/examples_libcoap_server/main.c \
+  examples/riot/examples_libcoap_server/Makefile \
+  examples/riot/examples_libcoap_server/Makefile.ci \
+  examples/riot/examples_libcoap_server/README.md \
+  examples/riot/examples_libcoap_server/server-coap.c \
+  examples/riot/examples_libcoap_server/server-coap.h \
+  examples/riot/examples_libcoap_server/Kconfig \
+  examples/riot/Makefile \
+  examples/riot/pkg_libcoap/Kconfig \
+  examples/riot/pkg_libcoap/Makefile \
+  examples/riot/pkg_libcoap/Makefile.dep \
+  examples/riot/pkg_libcoap/Makefile.include \
+  examples/riot/pkg_libcoap/Makefile.libcoap \
+  examples/riot/README \
+  Makefile.libcoap \
   include/coap$(LIBCOAP_API_VERSION)/coap_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_riot.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_asn1_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_async_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_block_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_cache_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_crypto_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_debug_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_dtls_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_hashkey_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_io_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_layers_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_mutex_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_net_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_netif_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_oscore_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_pdu_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_resource_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_session_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_subscribe_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_tcp_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_uri_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_uthash_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_utlist_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_ws_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap.h.in \
+  include/coap$(LIBCOAP_API_VERSION)/coap.h.riot \
+  include/coap$(LIBCOAP_API_VERSION)/coap.h.riot.in \
   include/coap$(LIBCOAP_API_VERSION)/coap.h.windows \
   include/coap$(LIBCOAP_API_VERSION)/coap.h.windows.in \
-  include/coap$(LIBCOAP_API_VERSION)/lwippools.h \
-  include/coap$(LIBCOAP_API_VERSION)/uthash.h \
-  include/coap$(LIBCOAP_API_VERSION)/utlist.h \
+  include/oscore/oscore_cbor.h \
+  include/oscore/oscore_context.h \
+  include/oscore/oscore_cose.h \
+  include/oscore/oscore_crypto.h \
+  include/oscore/oscore.h \
+  src/coap_io_contiki.c \
+  src/coap_io_lwip.c \
   src/coap_io_riot.c \
   tests/test_error_response.h \
   tests/test_encode.h \
   tests/test_options.h \
+  tests/test_oscore.h \
   tests/test_pdu.h \
   tests/test_sendqueue.h \
   tests/test_session.h \
@@ -78,6 +144,13 @@ EXTRA_DIST = \
   win32/testdriver/testdriver.vcxproj \
   win32/testdriver/testdriver.vcxproj.filters \
   win32/testdriver/testdriver.vcxproj.user
+
+# This is a mirror of files depending on COAP_OSCORE_SUPPORT included in src as per
+# libcoap_@LIBCOAP_NAME_SUFFIX@_la_SOURCES
+if !COAP_OSCORE_SUPPORT
+EXTRA_DIST += $(libcoap_OSCORE_sources)
+
+endif # !COAP_OSCORE_SUPPORT
 
 AM_CFLAGS = -I$(top_builddir)/include -I$(top_srcdir)/include $(WARNING_CFLAGS) \
             $(DTLS_CFLAGS) -std=c99 $(EXTRA_CFLAGS) \
@@ -102,33 +175,43 @@ libcoap_@LIBCOAP_NAME_SUFFIX@_la_CFLAGS = \
 ## Note that it is not necessary to list header files which are already listed
 ## elsewhere in a _HEADERS variable assignment.
 libcoap_@LIBCOAP_NAME_SUFFIX@_la_SOURCES = \
-  src/block.c \
   src/coap_address.c \
   src/coap_asn1.c \
   src/coap_async.c \
+  src/coap_block.c \
   src/coap_cache.c \
   src/coap_debug.c \
+  src/coap_dtls.c \
+  src/coap_encode.c \
   src/coap_event.c \
   src/coap_hashkey.c \
   src/coap_gnutls.c \
   src/coap_io.c \
+  src/coap_layers.c \
   src/coap_mbedtls.c \
+  src/coap_mem.c \
+  src/coap_net.c \
+  src/coap_netif.c \
   src/coap_notls.c \
   src/coap_openssl.c \
   src/coap_option.c \
+  src/coap_oscore.c \
+  src/coap_pdu.c \
   src/coap_prng.c \
+  src/coap_resource.c \
   src/coap_session.c \
+  src/coap_str.c \
   src/coap_subscribe.c \
   src/coap_tcp.c \
   src/coap_time.c \
   src/coap_tinydtls.c \
-  src/encode.c \
-  src/mem.c \
-  src/net.c \
-  src/pdu.c \
-  src/resource.c \
-  src/str.c \
-  src/uri.c
+  src/coap_uri.c \
+  src/coap_ws.c
+
+if COAP_OSCORE_SUPPORT
+libcoap_@LIBCOAP_NAME_SUFFIX@_la_SOURCES += $(libcoap_OSCORE_sources)
+
+endif # COAP_OSCORE_SUPPORT
 
 ## Define the list of public header files and their install location.
 ## The API version is appended to the install folder to being able to
@@ -142,31 +225,31 @@ libcoap_includedir = $(includedir)/coap$(LIBCOAP_API_VERSION)/
 #  $(top_srcdir)/include/coap-$(LIBCOAP_API_VERSION)/*
 
 libcoap_include_HEADERS = \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/block.h \
   $(top_builddir)/include/coap$(LIBCOAP_API_VERSION)/coap.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/libcoap.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_address.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_async.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_block.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_cache.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_debug.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_dtls.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_encode.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_event.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_forward_decls.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_hashkey.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_io.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_mutex.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_mem.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_net.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_option.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_oscore.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_pdu.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_prng.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_resource.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_session.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_str.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_subscribe.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_time.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/encode.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/libcoap.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/mem.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/net.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/pdu.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_prng.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/resource.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/str.h \
-  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/uri.h
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_uri.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_ws.h
 
 ## Instruct libtool to include API version information in the generated shared
 ## library file (.so). The library ABI version will later defined in configure.ac,
@@ -181,6 +264,9 @@ libcoap_@LIBCOAP_NAME_SUFFIX@_la_LDFLAGS =					\
 ## libcoap-$(LIBCOAP_API_VERSION).{map,sym} for the linker.
 CTAGS_IGNORE=-I " \
 coap_pdu_from_pbuf \
+coap_lwip_dump_memory_pools \
+coap_lwip_set_input_wait_handler \
+coap_print_contiki_prefix \
 "
 
 # This helper is called by libcoap-$(LIBCOAP_API_VERSION).{map,sym} to see if
@@ -202,14 +288,14 @@ update-map-file: libcoap-$(LIBCOAP_API_VERSION).map libcoap-$(LIBCOAP_API_VERSIO
 libcoap-$(LIBCOAP_API_VERSION).map: check_ctags $(libcoap_include_HEADERS)
 	( echo "VER_$(LIBCOAP_API_VERSION) {" ; \
 	echo "global:" ; \
-	$(CTAGS_PROG) $(CTAGS_IGNORE) -f - --c-kinds=p $(libcoap_include_HEADERS) | awk '/^coap_/ { print "  " $$1 ";" }' | sort -u ; \
+	$(CTAGS_PROG) $(CTAGS_IGNORE) -f - --c-kinds=p $(libcoap_include_HEADERS) | awk '/^coap_/ { print "  " $$1 ";" }' | LC_ALL=C sort -u ; \
 	echo "local:" ; \
 	echo "  *;" ; \
 	echo "};" ) > $(top_builddir)/$@.new
 	mv $(top_builddir)/$@.new $(top_builddir)/$@
 
 libcoap-$(LIBCOAP_API_VERSION).sym: check_ctags $(libcoap_include_HEADERS)
-	( $(CTAGS_PROG) $(CTAGS_IGNORE) -f - --c-kinds=p $(libcoap_include_HEADERS) | awk '/^coap_/ { print $$1 }' | sort -u ) \
+	( $(CTAGS_PROG) $(CTAGS_IGNORE) -f - --c-kinds=p $(libcoap_include_HEADERS) | awk '/^coap_/ { print $$1 }' | LC_ALL=C sort -u ) \
 	> $(top_builddir)/$@.new
 	mv $(top_builddir)/$@.new $(top_builddir)/$@
 

@@ -1,7 +1,7 @@
 /*
  * coap_cache_internal.h -- Cache functions for libcoap
  *
- * Copyright (C) 2019--2020 Olaf Bergmann <bergmann@tzi.org> and others
+ * Copyright (C) 2019--2023 Olaf Bergmann <bergmann@tzi.org> and others
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -19,6 +19,7 @@
 
 #include "coap_internal.h"
 #include "coap_io.h"
+#include "coap_uthash_internal.h"
 
 #if COAP_SERVER_SUPPORT
 /**
@@ -42,7 +43,7 @@ struct coap_cache_entry_t {
   coap_cache_key_t *cache_key;
   coap_session_t *session;
   coap_pdu_t *pdu;
-  void* app_data;
+  void *app_data;
   coap_tick_t expire_ticks;
   unsigned int idle_timeout;
   coap_cache_app_data_free_callback_t callback;
@@ -90,8 +91,8 @@ void coap_digest_free(coap_digest_ctx_t *digest_ctx);
  * @return           @c 1 success, @c 0 failure.
  */
 int coap_digest_update(coap_digest_ctx_t *digest_ctx,
-                      const uint8_t *data,
-                      size_t data_len
+                       const uint8_t *data,
+                       size_t data_len
                       );
 
 /**

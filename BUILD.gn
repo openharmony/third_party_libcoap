@@ -20,27 +20,31 @@ config("libcoap_config") {
 src = [
   "src/coap_address.c",
   "src/coap_async.c",
-  "src/block.c",
-  "src/coap_asn1.c",
+  "src/coap_block.c",
   "src/coap_cache.c",
   "src/coap_debug.c",
+  "src/coap_dtls.c",
   "src/coap_event.c",
   "src/coap_hashkey.c",
   "src/coap_io.c",
+  "src/coap_layers.c",
   "src/coap_notls.c",
+  "src/coap_netif.c",
   "src/coap_prng.c",
   "src/coap_session.c",
   "src/coap_tcp.c",
   "src/coap_time.c",
-  "src/encode.c",
-  "src/mem.c",
-  "src/net.c",
+  "src/coap_encode.c",
+  "src/coap_mem.c",
+  "src/coap_net.c",
   "src/coap_option.c",
-  "src/pdu.c",
-  "src/resource.c",
-  "src/str.c",
+  "src/coap_oscore.c",
+  "src/coap_pdu.c",
+  "src/coap_resource.c",
+  "src/coap_str.c",
   "src/coap_subscribe.c",
-  "src/uri.c",
+  "src/coap_uri.c",
+  "src/coap_ws.c",
 ]
 
 source_set("libcoap_src") {
@@ -59,7 +63,6 @@ deps_with_shared = [
 ]
 
 if (defined(ohos_lite)) {
-  print("[libcoap build] in ohos_lite branch")  # check position
   import("//build/lite/config/component/lite_component.gni")
 
   static_library("libcoap_static") {
@@ -72,7 +75,6 @@ if (defined(ohos_lite)) {
     public_configs = [ ":libcoap_config" ]
   }
 } else {
-  print("[libcoap build] in other branch")  # check position
   import("//build/ohos.gni")
 
   ohos_static_library("libcoap_static") {

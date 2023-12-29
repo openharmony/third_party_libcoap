@@ -1,6 +1,6 @@
 /* libcoap unit tests
  *
- * Copyright (C) 2013,2015 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2013,2015,2022-2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -45,7 +45,7 @@ t_error_response1(void) {
 
   CU_ASSERT(response->used_size == sizeof(teststr) - 4);
   CU_ASSERT(response->type == COAP_MESSAGE_ACK);
-  CU_ASSERT(response->token_length == 0);
+  CU_ASSERT(response->e_token_length == 0);
   CU_ASSERT(response->code == 0x80);
   CU_ASSERT(response->mid == 0x1234);
   CU_ASSERT(coap_pdu_encode_header(response, COAP_PROTO_UDP) == 4);
@@ -75,7 +75,7 @@ t_error_response2(void) {
 
   CU_ASSERT(response->used_size == sizeof(teststr) - 4);
   CU_ASSERT(response->type == COAP_MESSAGE_NON);
-  CU_ASSERT(response->token_length == 5);
+  CU_ASSERT(response->e_token_length == 5);
   CU_ASSERT(response->code == 0x84);
   CU_ASSERT(coap_pdu_encode_header(response, COAP_PROTO_UDP) == 4);
   CU_ASSERT(memcmp(response->token - 4, teststr, sizeof(teststr)) == 0);
@@ -108,7 +108,7 @@ t_error_response3(void) {
 
   CU_ASSERT(response->used_size == sizeof(teststr) - 4);
   CU_ASSERT(response->type == COAP_MESSAGE_ACK);
-  CU_ASSERT(response->token_length == 5);
+  CU_ASSERT(response->e_token_length == 5);
   CU_ASSERT(response->code == code);
   CU_ASSERT(coap_pdu_encode_header(response, COAP_PROTO_UDP) == 4);
   CU_ASSERT(memcmp(response->token - 4, teststr, sizeof(teststr)) == 0);
@@ -124,10 +124,10 @@ t_error_response4(void) {
   };
   uint8_t teststr[] = {
     0x65, code, 0x00, 0x00,  't',  'o',  'k',  'e',
-     'n', 0xdc, 0x0c, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+    'n', 0xdc, 0x0c, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
     0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0xff,  'B',
-     'a',  'd',  ' ',  'O',  'p',  't',  'i',  'o',
-     'n'
+    'a',  'd',  ' ',  'O',  'p',  't',  'i',  'o',
+    'n'
   };
   coap_pdu_t *response;
 
@@ -147,7 +147,7 @@ t_error_response4(void) {
 
   CU_ASSERT(response->used_size == sizeof(teststr) - 4);
   CU_ASSERT(response->type == COAP_MESSAGE_ACK);
-  CU_ASSERT(response->token_length == 5);
+  CU_ASSERT(response->e_token_length == 5);
   CU_ASSERT(response->code == code);
   CU_ASSERT(coap_pdu_encode_header(response, COAP_PROTO_UDP) == 4);
   CU_ASSERT(memcmp(response->token - 4, teststr, sizeof(teststr)) == 0);
@@ -164,11 +164,11 @@ t_error_response5(void) {
   };
   uint8_t teststr[] = {
     0x65, code, 0x00, 0x00,  't',  'o',  'k',  'e',
-     'n', 0xdd, 0x0c, 0x06, 0x00, 0x01, 0x02, 0x03, 0x04,
+    'n', 0xdd, 0x0c, 0x06, 0x00, 0x01, 0x02, 0x03, 0x04,
     0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c,
     0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0xff,  'B',
-     'a',  'd',  ' ',  'O',  'p',  't',  'i',  'o',
-     'n'
+    'a',  'd',  ' ',  'O',  'p',  't',  'i',  'o',
+    'n'
   };
   coap_pdu_t *response;
 
@@ -188,7 +188,7 @@ t_error_response5(void) {
 
   CU_ASSERT(response->used_size == sizeof(teststr) - 4);
   CU_ASSERT(response->type == COAP_MESSAGE_ACK);
-  CU_ASSERT(response->token_length == 5);
+  CU_ASSERT(response->e_token_length == 5);
   CU_ASSERT(response->code == code);
   CU_ASSERT(coap_pdu_encode_header(response, COAP_PROTO_UDP) == 4);
   CU_ASSERT(memcmp(response->token - 4, teststr, sizeof(teststr)) == 0);
@@ -205,11 +205,11 @@ t_error_response6(void) {
   };
   uint8_t teststr[] = {
     0x65, code, 0x00, 0x00,  't',  'o',  'k',  'e',
-     'n', 0xdd, 0x0a, 0x06, 0x00, 0x01, 0x02, 0x03,
+    'n', 0xdd, 0x0a, 0x06, 0x00, 0x01, 0x02, 0x03,
     0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
     0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0xff,
-     'B',  'a',  'd',  ' ',  'O',  'p',  't',  'i',
-     'o',  'n'
+    'B',  'a',  'd',  ' ',  'O',  'p',  't',  'i',
+    'o',  'n'
   };
   coap_pdu_t *response;
 
@@ -229,7 +229,7 @@ t_error_response6(void) {
 
   CU_ASSERT(response->used_size == sizeof(teststr) - 4);
   CU_ASSERT(response->type == COAP_MESSAGE_ACK);
-  CU_ASSERT(response->token_length == 5);
+  CU_ASSERT(response->e_token_length == 5);
   CU_ASSERT(response->code == code);
   CU_ASSERT(coap_pdu_encode_header(response, COAP_PROTO_UDP) == 4);
   CU_ASSERT(memcmp(response->token - 4, teststr, sizeof(teststr)) == 0);
@@ -246,11 +246,11 @@ t_error_response7(void) {
   };
   uint8_t teststr[] = {
     0x65, code, 0x00, 0x00,  't',  'o',  'k',  'e',
-     'n', 0xdd, 0x0a, 0x06, 0x00, 0x01, 0x02, 0x03,
+    'n', 0xdd, 0x0a, 0x06, 0x00, 0x01, 0x02, 0x03,
     0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
     0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0xff,
-     'B',  'a',  'd',  ' ',  'O',  'p',  't',  'i',
-     'o',  'n'
+    'B',  'a',  'd',  ' ',  'O',  'p',  't',  'i',
+    'o',  'n'
   };
   coap_pdu_t *response;
 
@@ -271,7 +271,7 @@ t_error_response7(void) {
 
   CU_ASSERT(response->used_size == sizeof(teststr) - 4);
   CU_ASSERT(response->type == COAP_MESSAGE_ACK);
-  CU_ASSERT(response->token_length == 5);
+  CU_ASSERT(response->e_token_length == 5);
   CU_ASSERT(response->code == code);
   CU_ASSERT(coap_pdu_encode_header(response, COAP_PROTO_UDP) == 4);
   CU_ASSERT(memcmp(response->token - 4, teststr, sizeof(teststr)) == 0);
@@ -283,10 +283,10 @@ t_error_response8(void) {
   const uint8_t code = COAP_RESPONSE_CODE(503);
   uint8_t teststr[] = {
     0x65, code, 0x00, 0x00,  't',  'o',  'k',  'e',
-     'n', 0xe0, 0x02, 0xdc, 0xd0, 0x00, 0xff,  'S',
-     'e',  'r',  'v',  'i',  'c',  'e',  ' ',  'U',
-     'n',  'a',  'v',  'a',  'i',  'l',  'a',  'b',
-     'l',  'e'
+    'n', 0xe0, 0x02, 0xdc, 0xd0, 0x00, 0xff,  'S',
+    'e',  'r',  'v',  'i',  'c',  'e',  ' ',  'U',
+    'n',  'a',  'v',  'a',  'i',  'l',  'a',  'b',
+    'l',  'e'
   };
   coap_pdu_t *response;
 
@@ -312,7 +312,7 @@ t_error_response8(void) {
 
   CU_ASSERT(response->used_size == sizeof(teststr) - 4);
   CU_ASSERT(response->type == COAP_MESSAGE_ACK);
-  CU_ASSERT(response->token_length == 5);
+  CU_ASSERT(response->e_token_length == 5);
   CU_ASSERT(response->code == code);
   CU_ASSERT(coap_pdu_encode_header(response, COAP_PROTO_UDP) == 4);
   CU_ASSERT(memcmp(response->token - 4, teststr, sizeof(teststr)) == 0);
@@ -363,4 +363,3 @@ t_init_error_response_tests(void) {
 
   return suite[0];
 }
-

@@ -1,14 +1,26 @@
 # examples/Makefile.am
 #
 # Copyright (C)      2015 Carsten Schoenert <c.schoenert@t-online.de>
-# Copyright (C) 2018-2022 Jon Shallow <supjps-libcoap@jpshallow.com>
+# Copyright (C) 2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
 # This file is part of the CoAP C library libcoap. Please see README and
 # COPYING for terms of use.
 
-EXTRA_DIST = share.libcoap.examples.Makefile share.libcoap.examples.README
+EXTRA_DIST = \
+  share.libcoap.examples.Makefile \
+  share.libcoap.examples.README \
+  coap_list.h \
+  getopt.c \
+  interop/a_client.conf \
+  interop/b_server.conf \
+  interop/c_client.conf \
+  interop/d_server.conf \
+  interop/e_client.conf \
+  interop/f_client.conf \
+  interop/g_client.conf \
+  oscore_testcases.sh
 
 # just do nothing if 'BUILD_EXAMPLES' isn't defined
 if BUILD_EXAMPLES
@@ -38,7 +50,7 @@ if HAVE_SERVER_SUPPORT
 
 bin_PROGRAMS += coap-server@LIBCOAP_DTLS_LIB_EXTENSION_NAME@ \
                 coap-rd@LIBCOAP_DTLS_LIB_EXTENSION_NAME@
-check_PROGRAMS += coap-etsi_iot_01
+check_PROGRAMS += coap-etsi_iot_01 oscore-interop-server
 
 if BUILD_ADD_DEFAULT_NAMES
 noinst_PROGRAMS += coap-server coap-rd
@@ -47,7 +59,7 @@ endif # BUILD_ADD_DEFAULT_NAMES
 if ! HAVE_CLIENT_SUPPORT
 coap_server_CPPFLAGS=-DSERVER_CAN_PROXY=0
 coap_server@LIBCOAP_DTLS_LIB_EXTENSION_NAME@_CPPFLAGS=-DSERVER_CAN_PROXY=0
-endif # HAVE_CLIENT_SUPPORT
+endif # ! HAVE_CLIENT_SUPPORT
 
 endif # HAVE_SERVER_SUPPORT
 
@@ -77,6 +89,10 @@ coap_rd@LIBCOAP_DTLS_LIB_EXTENSION_NAME@_LDADD = $(DTLS_LIBS) \
 
 coap_etsi_iot_01_SOURCES = etsi_iot_01.c
 coap_etsi_iot_01_LDADD = $(DTLS_LIBS) \
+             $(top_builddir)/.libs/libcoap-$(LIBCOAP_NAME_SUFFIX).la
+
+oscore_interop_server_SOURCES = oscore-interop-server.c
+oscore_interop_server_LDADD = $(DTLS_LIBS) \
              $(top_builddir)/.libs/libcoap-$(LIBCOAP_NAME_SUFFIX).la
 
 coap_tiny_SOURCES = tiny.c

@@ -1,5 +1,5 @@
 // -*- mode:doc; -*-
-// vim: set syntax=asciidoc,tw=0:
+// vim: set syntax=asciidoc tw=0
 
 coap_attribute(3)
 =================
@@ -48,18 +48,24 @@ request methods.
 Adding Attributes allows textual information to be added to the resource
 which can then be reported back to any client doing a Resource Discovery using
 a "GET /.well-known/core" request with an optional query.
-See https://tools.ietf.org/html/rfc6690#section-5 for some examples of
+See "https://rfc-editor.org/rfc/rfc6690#section-5[RFC6690 5. Examples]" for
+some examples of
 resource discovery usage.  Common attribute names are rt, if, sz, ct, obs, rel,
 anchor, rev, hreflang, media, title and type. href cannot be an attribute name.
 
 Attributes are automatically deleted when a Resource is deleted.
 
+FUNCTIONS
+---------
+
+*Function: coap_add_attr()*
+
 The *coap_add_attr*() function
 registers a new attribute called _name_ for the _resource_.
 The value of the attribute is _value_ which can be NULL.
 
-_flags_ can be one or more of the following, which, if set, defines what is
-to be internally freed off when the attribute is deleted with
+_flags_ can be zero or more of the following or'd together, which, if set,
+defines what is to be internally freed off when the attribute is deleted with
 *coap_delete_resource*().
 
 [horizontal]
@@ -69,21 +75,25 @@ Free off _name_ when attribute is deleted with *coap_delete_resource*().
 *COAP_ATTR_FLAGS_RELEASE_VALUE*::
 Free off _value_ when attribute is deleted with *coap_delete_resource*().
 
+*Function: coap_find_attr()*
+
 The *coap_find_attr*() function returns the attribute with the _name_,
 if found, associated with _resource_.
+
+*Function: coap_attr_get_value()*
 
 The *coap_attr_get_value*() function returns the _value_ associated with the
 specified _attribute_.
 
 RETURN VALUES
 -------------
-*coap_add_attr*() function returns a pointer to
+*coap_add_attr*() returns a pointer to
 the attribute that was created or NULL if there is a malloc failure.
 
-*coap_find_attr*() function returns a pointer to the first matching
+*coap_find_attr*() returns a pointer to the first matching
 attribute or NULL if the _name_ was not found.
 
-*coap_attr_get_value*() function returns a pointer to the value held within
+*coap_attr_get_value*() returns a pointer to the value held within
 the attribute. The pointer can be NULL if the _value_ id NULL, or NULL if
 _attribute_ does not exist.
 
@@ -92,8 +102,28 @@ EXAMPLE
 *Initialize Resources*
 
 [source, c]
---
+----
 #include <coap@LIBCOAP_API_VERSION@/coap.h>
+
+void hnd_get_index(coap_resource_t *resource, coap_session_t *session,
+                   const coap_pdu_t *request,
+                   const coap_string_t *query,
+                   coap_pdu_t *response);
+
+void hnd_get_time(coap_resource_t *resource, coap_session_t *session,
+                  const coap_pdu_t *request,
+                  const coap_string_t *query,
+                  coap_pdu_t *response);
+
+void hnd_put_time(coap_resource_t *resource, coap_session_t *session,
+                  const coap_pdu_t *request,
+                  const coap_string_t *query,
+                  coap_pdu_t *response);
+
+void hnd_delete_time(coap_resource_t *resource, coap_session_t *session,
+                     const coap_pdu_t *request,
+                     const coap_string_t *query,
+                     coap_pdu_t *response);
 
 static void
 init_resources(coap_context_t *ctx) {
@@ -131,7 +161,7 @@ init_resources(coap_context_t *ctx) {
   coap_add_resource(ctx, r);
 
 }
---
+----
 
 SEE ALSO
 --------
@@ -141,9 +171,9 @@ FURTHER INFORMATION
 -------------------
 See
 
-"RFC7252: The Constrained Application Protocol (CoAP)"
+"https://rfc-editor.org/rfc/rfc7252[RFC7252: The Constrained Application Protocol (CoAP)]"
 
-"RFC6690: Constrained RESTful Environments (CoRE) Link Format"
+"https://rfc-editor.org/rfc/rfc6690[RFC6690: Constrained RESTful Environments (CoRE) Link Format]"
 
 for further information.
 

@@ -30,14 +30,7 @@
  *
  */
 
-#include "coap_config.h"
-
-#define DEBUG DEBUG_PRINT
-#include "net/ip/uip-debug.h"
-#include "net/net-debug.h"
-
-#include <string.h>
-
+#include "contiki-net.h"
 #include "coap3/coap.h"
 
 static coap_context_t *coap_context;
@@ -52,37 +45,21 @@ AUTOSTART_PROCESSES(&coap_server_process);
 /*---------------------------------------------------------------------------*/
 void
 init_coap_server(coap_context_t **ctx) {
+  uip_ds6_addr_t *my_address;
   coap_address_t listen_addr;
-  uip_ipaddr_t gw_addr;
 
   assert(ctx);
 
-  coap_set_log_level(LOG_DEBUG);
-
-  coap_address_init(&listen_addr);
-  listen_addr.port = UIP_HTONS(COAP_DEFAULT_PORT);
-
-  uip_ip6addr(&listen_addr.addr, 0xaaaa, 0, 0, 0, 0, 0, 0, NODE_ADDR);
-#ifndef CONTIKI_TARGET_MINIMAL_NET
-  uip_ds6_prefix_add(&listen_addr.addr, 64, 0, 0, 0, 0);
-#endif /* not CONTIKI_TARGET_MINIMAL_NET */
-
-  uip_ds6_addr_add(&listen_addr.addr, 0, ADDR_MANUAL);
-
-  /* set default route to gateway aaaa::1 */
-  uip_ip6addr(&gw_addr, 0xaaaa, 0, 0, 0, 0, 0, 0, 0x0001);
-  uip_ds6_defrt_add(&gw_addr, 0);
-
-  PRINTLLADDR(&uip_lladdr);
-  printf("\r\n");
-  PRINT6ADDR(&listen_addr.addr);
-  printf("\r\n");
+  my_address = uip_ds6_get_global(ADDR_PREFERRED);
+  uip_ipaddr_copy(&listen_addr.addr, &my_address->ipaddr);
+  coap_address_set_port(&listen_addr, COAP_DEFAULT_PORT);
 
   *ctx = coap_new_context(&listen_addr);
 
   if (!*ctx) {
-    coap_log(LOG_CRIT, "cannot create CoAP context\r\n");
+    coap_log_crit("cannot create CoAP context\r\n");
   }
+  coap_context_set_max_idle_sessions(*ctx, 2);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -107,8 +84,8 @@ hnd_get_time(coap_resource_t *resource, coap_session_t *session,
 
     if (query != NULL
         && coap_string_equal(query, coap_make_str_const("ticks"))) {
-          /* output ticks */
-          len = snprintf((char *)buf, sizeof(buf), "%u", (unsigned int)now);
+      /* output ticks */
+      len = snprintf((char *)buf, sizeof(buf), "%u", (unsigned int)now);
 
     } else {      /* output human-readable time */
       struct tm *tmp;
@@ -118,8 +95,7 @@ hnd_get_time(coap_resource_t *resource, coap_session_t *session,
         /* If 'tnow' is not valid */
         coap_pdu_set_code(response, COAP_RESPONSE_CODE_NOT_FOUND);
         return;
-      }
-      else {
+      } else {
         len = strftime((char *)buf, sizeof(buf), "%b %d %H:%M:%S", tmp);
       }
     }
@@ -127,8 +103,7 @@ hnd_get_time(coap_resource_t *resource, coap_session_t *session,
                                    COAP_MEDIATYPE_TEXT_PLAIN, 1,
                                    len,
                                    buf);
-  }
-  else {
+  } else {
     /* if my_clock_base was deleted, we pretend to have no such resource */
     coap_pdu_set_code(response, COAP_RESPONSE_CODE_NOT_FOUND);
   }
@@ -166,56 +141,51 @@ init_coap_resources(coap_context_t *ctx) {
 
   coap_add_resource(ctx, r);
 #if 0
-#ifndef WITHOUT_ASYNC
-  r = coap_resource_init(coap_make_str_const("async"), 0);
-  coap_register_handler(r, COAP_REQUEST_GET, hnd_get_async);
+  if (coap_async_is_supported()) {
+    r = coap_resource_init(coap_make_str_const("async"), 0);
+    coap_register_handler(r, COAP_REQUEST_GET, hnd_get_async);
 
-  coap_add_attr(r, coap_make_str_const("ct"), coap_make_str_const("0"), 0);
-  coap_add_resource(ctx, r);
-#endif /* WITHOUT_ASYNC */
+    coap_add_attr(r, coap_make_str_const("ct"), coap_make_str_const("0"), 0);
+    coap_add_resource(ctx, r);
+  }
 #endif
 
   return;
- error:
-  coap_log(LOG_CRIT, "cannot create resource\n");
+error:
+  coap_log_crit("cannot create resource\n");
 }
 
 /* struct etimer notify_timer; */
 struct etimer dirty_timer;
 
 /*---------------------------------------------------------------------------*/
-PROCESS_THREAD(coap_server_process, ev, data)
-{
+PROCESS_THREAD(coap_server_process, ev, data) {
   PROCESS_BEGIN();
+
+  /* Initialize libcoap library */
+  coap_startup();
 
   clock_offset = clock_time();
   init_coap_server(&coap_context);
 
   if (!coap_context) {
-    coap_log(LOG_EMERG, "cannot create context\n");
+    coap_log_emerg("cannot create context\n");
     PROCESS_EXIT();
   }
 
   init_coap_resources(coap_context);
 
-  if (!coap_context) {
-    coap_log(LOG_EMERG, "cannot create context\n");
-    PROCESS_EXIT();
-  }
-
   /* etimer_set(&notify_timer, 5 * CLOCK_SECOND); */
   etimer_set(&dirty_timer, 30 * CLOCK_SECOND);
 
-  while(1) {
+  while (1) {
     PROCESS_YIELD();
-    if(ev == tcpip_event) {
-      /* There is something to read on the endpoint */
-      coap_io_process(coap_context, COAP_IO_WAIT);
-    } else if (ev == PROCESS_EVENT_TIMER && etimer_expired(&dirty_timer)) {
+    if (ev == PROCESS_EVENT_TIMER && etimer_expired(&dirty_timer)) {
       coap_resource_notify_observers(time_resource, NULL);
       etimer_reset(&dirty_timer);
     }
   }
+  coap_cleanup();
 
   PROCESS_END();
 }

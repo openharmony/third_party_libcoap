@@ -1,6 +1,6 @@
 /* libcoap unit tests
  *
- * Copyright (C) 2012-2021 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2012-2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -23,6 +23,9 @@
 #include "test_sendqueue.h"
 #include "test_wellknown.h"
 #include "test_tls.h"
+#if COAP_OSCORE_SUPPORT && COAP_SERVER_SUPPORT
+#include "test_oscore.h"
+#endif /* COAP_OSCORE_SUPPORT && COAP_CLIENT_SUPPORT */
 
 int
 main(int argc COAP_UNUSED, char **argv COAP_UNUSED) {
@@ -48,6 +51,9 @@ main(int argc COAP_UNUSED, char **argv COAP_UNUSED) {
   t_init_wellknown_tests();
 #endif /* COAP_SERVER_SUPPORT && COAP_CLIENT_SUPPORT */
   t_init_tls_tests();
+#if COAP_OSCORE_SUPPORT && COAP_SERVER_SUPPORT
+  t_init_oscore_tests();
+#endif /* COAP_OSCORE_SUPPORT && COAP_CLIENT_SUPPORT */
 
   CU_basic_set_mode(run_mode);
   result = CU_basic_run_tests();

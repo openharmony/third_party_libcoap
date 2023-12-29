@@ -1,5 +1,5 @@
 // -*- mode:doc; -*-
-// vim: set syntax=asciidoc,tw=0:
+// vim: set syntax=asciidoc tw=0
 
 coap_session(3)
 ===============
@@ -18,6 +18,7 @@ coap_session_set_type_client,
 coap_session_set_app_data,
 coap_session_get_app_data,
 coap_session_get_addr_local,
+coap_session_get_addr_mcast,
 coap_session_get_addr_remote,
 coap_session_get_context,
 coap_session_get_ifindex,
@@ -46,6 +47,9 @@ SYNOPSIS
 *void *coap_session_get_app_data(const coap_session_t *_session_);*
 
 *const coap_address_t *coap_session_get_addr_local(
+const coap_session_t *_session_);*
+
+*const coap_address_t *coap_session_get_addr_mcast(
 const coap_session_t *_session_);*
 
 *const coap_address_t *coap_session_get_addr_remote(
@@ -88,10 +92,17 @@ is tracked by local port, CoAP protocol, remote IP address and remote port.
 The Session network traffic can be encrypted or un-encrypted if there is an
 underlying TLS library.
 
+FUNCTIONS
+---------
+
+*Function: coap_session_reference()*
+
 The *coap_session_reference*() function is used to increment the reference
 count of the _session_.  Incrementing the reference count by an application
 means that the library will not inadvertently remove the session when it has
 finished processing the session.
+
+*Function: coap_session_release()*
 
 The *coap_session_release*() function is be used to decrement the _session_
 reference count, which when it gets to 0, will:-
@@ -106,29 +117,54 @@ completely freed off.  *NOTE:* Unless the application increments the
 reference count, this is the case for all type server sessions as they start
 with a reference count of 0.
 
+*Function: coap_session_disconnected()*
+
 The *coap_session_disconnected*() function is used to force the closure of a
 _session_ for the reason _reason_. It will cause any outstanding traffic to
 get dropped.
+
+*Function: coap_session_set_type_client()*
 
 The *coap_session_set_type_client*() function is used to convert the _session_
 frrm a session endpoint type of Server to Client.  This typically is used in a
 Call-Home type environment where the roles have to change following the
 establishment of a session.  The reference count is incremented by 1.
 
+*Function: coap_session_set_app_data()*
+
 The *coap_session_set_app_data*() function is used to define a _data_ pointer
 for the _session_ which can then be retrieved at a later date.
+
+*Function: coap_session_get_app_data()*
 
 The *coap_session_get_app_data*() function is used to retrieve the data
 pointer previously defined by *coap_session_set_app_data*().
 
+*Function: coap_session_get_addr_local()*
+
 The *coap_session_get_addr_local*() function is used to get the local IP
 address and port information from the _session_.
 
+*Function: coap_session_get_addr_mcast()*
+
+The *coap_session_get_addr_mcast*() function is used to get the remote (peer)
+multicast IP address and port information from the _session_ if the _session_
+was originally set up to send requests to a multicast IP.
+
+*Function: coap_session_get_addr_remote()*
+
 The *coap_session_get_addr_remote*() function is used to get the remote (peer)
-IP address and port information from the _session_.
+IP address and port information from the _session_.  If the _session_ was
+originally set up to send requests to a multicast IP, then the returned IP
+will be that of the unicast response from a peer. The returned IP will get
+set back to the multicast IP when the next *coap_send*(3) is called.
+
+*Function: coap_session_get_context()*
 
 The *coap_session_get_context*() function is used to get the CoAP context
 associated with the _session_.
+
+*Function: coap_session_get_ifindex()*
 
 The  *coap_session_get_ifindex*() function is used to get the network interface
 index that the traffic came in over from the _session_.
@@ -139,6 +175,8 @@ COAP_PROTO_UDP
 COAP_PROTO_DTLS
 COAP_PROTO_TCP
 COAP_PROTO_TLS
+COAP_PROTO_WS
+COAP_PROTO_WSS
 ----
 
 The *coap_session_get_proto*() function is used to get the CoAP protocol from
@@ -187,14 +225,17 @@ _session_'s pre-shared-key key information.
 RETURN VALUES
 -------------
 
-*coap_session_reference*() function returns a pointer to the session.
+*coap_session_reference*() returns a pointer to the session.
 
-*coap_session_set_type_client*() function returns 1 on success, otherwise 0.
+*coap_session_set_type_client*() returns 1 on success, otherwise 0.
 
-*coap_session_get_app_data*() function return a previously defined pointer.
+*coap_session_get_app_data*() returns a previously defined pointer.
 
 *coap_session_get_addr_local*() and *coap_session_get_addr_remote*() return
 a pointer to the IP address / port or NULL on error.
+
+*coap_session_get_addr_mcast*() returns a pointer to the remote multicast IP
+address / port or NULL on error or this is not a multicast session.
 
 *coap_session_get_context*() returns a pointer to the current CoAP Context or
 NULL on error.
@@ -224,8 +265,11 @@ SEE ALSO
 
 FURTHER INFORMATION
 -------------------
-See "RFC7252: The Constrained Application Protocol (CoAP)" for further
-information.
+See
+
+"https://rfc-editor.org/rfc/rfc7252[RFC7252: The Constrained Application Protocol (CoAP)]"
+
+for further information.
 
 BUGS
 ----

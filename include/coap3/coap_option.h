@@ -1,7 +1,7 @@
 /*
  * coap_option.h -- helpers for handling options in CoAP PDUs
  *
- * Copyright (C) 2010-2013,2022 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2013,2022-2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -112,13 +112,12 @@ typedef struct coap_opt_filter_t {
  *
  * @param filter The filter to clear.
  */
-void
-coap_option_filter_clear(coap_opt_filter_t *filter);
+void coap_option_filter_clear(coap_opt_filter_t *filter);
 
 /**
  * Sets the corresponding entry for @p number in @p filter. This
  * function returns @c 1 if bit was set or @c 0 on error (i.e. when
- * the given number does not fit in the filter).
+ * there is not enough space to fit the given number in the filter).
  *
  * @param filter The filter object to change.
  * @param number The option number for which the bit should be set.
@@ -129,26 +128,24 @@ int coap_option_filter_set(coap_opt_filter_t *filter, coap_option_num_t number);
 
 /**
  * Clears the corresponding entry for @p number in @p filter. This
- * function returns @c 1 if bit was set or @c 0 on error (i.e. when
- * the given number does not fit in the filter).
+ * function returns @c 1 if bit was set or @c 0 if not previously set.
  *
  * @param filter The filter object to change.
  * @param number The option number that should be cleared from the filter.
  *
- * @return       @c 1 if bit was set, @c 0 otherwise.
+ * @return       @c 1 if bit was cleared, @c 0 otherwise.
  */
 int coap_option_filter_unset(coap_opt_filter_t *filter,
                              coap_option_num_t number);
 
 /**
  * Checks if @p number is contained in @p filter. This function returns
- * @c 1 if found, @c 0 if not, or @c -1 on error (i.e. when the given
- * number does not fit in the filter).
+ * @c 1 if found, @c 0 if not.
  *
  * @param filter The filter object to search.
  * @param number The option number to search for.
  *
- * @return       @c 1 if @p number was found, @c 0 otherwise, or @c -1 on error.
+ * @return       @c 1 if @p number was found, @c 0 otherwise
  */
 int coap_option_filter_get(coap_opt_filter_t *filter, coap_option_num_t number);
 
@@ -360,7 +357,7 @@ coap_optlist_t *coap_new_optlist(uint16_t number,
  *
  * @return     @c 1 if succesful or @c 0 if failure;
  */
-int coap_add_optlist_pdu(coap_pdu_t *pdu, coap_optlist_t** optlist_chain);
+int coap_add_optlist_pdu(coap_pdu_t *pdu, coap_optlist_t **optlist_chain);
 
 /**
  * Adds @p optlist to the given @p optlist_chain. The optlist_chain variable
@@ -405,8 +402,7 @@ coap_option_setb(coap_opt_filter_t *filter, uint16_t type) {
 
 /**
  * Clears the corresponding bit for @p type in @p filter. This function returns
- * @c 1 if bit was cleared or @c -1 on error (i.e. when the given type does not
- * fit in the filter).
+ * @c 1 if bit was cleared or @c -1 on error (i.e. bit not set).
  *
  * @deprecated Use coap_option_filter_unset() instead.
  *
@@ -422,15 +418,14 @@ coap_option_clrb(coap_opt_filter_t *filter, uint16_t type) {
 
 /**
  * Gets the corresponding bit for @p type in @p filter. This function returns @c
- * 1 if the bit is set @c 0 if not, or @c -1 on error (i.e. when the given type
- * does not fit in the filter).
+ * 1 if the bit is set @c 0 if not.
  *
  * @deprecated Use coap_option_filter_get() instead.
  *
  * @param filter The filter object to read bit from.
  * @param type   The type for which the bit should be read.
  *
- * @return       @c 1 if bit was set, @c 0 if not, @c -1 on error.
+ * @return       @c 1 if bit was set, @c 0 if not.
  */
 COAP_STATIC_INLINE COAP_DEPRECATED int
 coap_option_getb(coap_opt_filter_t *filter, uint16_t type) {

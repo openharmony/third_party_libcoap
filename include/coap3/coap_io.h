@@ -1,7 +1,7 @@
 /*
  * coap_io.h -- Default network I/O functions for libcoap
  *
- * Copyright (C) 2012-2013,2022 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2012-2013,2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -57,7 +57,7 @@ typedef struct coap_addr_tuple_t {
   coap_address_t local;        /**< local address and port */
 } coap_addr_tuple_t;
 
-const char *coap_socket_strerror( void );
+const char *coap_socket_strerror(void);
 
 /**
  * Check whether TCP is available.
@@ -71,7 +71,11 @@ typedef enum {
   COAP_NACK_NOT_DELIVERABLE,
   COAP_NACK_RST,
   COAP_NACK_TLS_FAILED,
-  COAP_NACK_ICMP_ISSUE
+  COAP_NACK_ICMP_ISSUE,
+  COAP_NACK_BAD_RESPONSE,
+  COAP_NACK_TLS_LAYER_FAILED,
+  COAP_NACK_WS_LAYER_FAILED,
+  COAP_NACK_WS_FAILED
 } coap_nack_reason_t;
 
 #endif /* COAP_IO_H_ */

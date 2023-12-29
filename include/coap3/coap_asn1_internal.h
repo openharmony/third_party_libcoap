@@ -1,7 +1,7 @@
 /*
  * coap_asn1_internal.h -- ASN.1 functions for libcoap
  *
- * Copyright (C) 2020 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2020-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -64,11 +64,11 @@ size_t asn1_len(const uint8_t **ptr);
  *
  * @param ptr  The current asn.1 object tag pointer
  * @param constructed  1 if current tag is constructed
- * @param class  The current class of the tag
+ * @param cls  The current class of the tag
  *
  * @return The tag value.@p ptr is updated to be after the tag.
  */
-coap_asn1_tag_t asn1_tag_c(const uint8_t **ptr, int *constructed, int *class);
+coap_asn1_tag_t asn1_tag_c(const uint8_t **ptr, int *constructed, int *cls);
 
 /**
  * Get the asn1 tag and data from the current @p ptr.
@@ -80,7 +80,8 @@ coap_asn1_tag_t asn1_tag_c(const uint8_t **ptr, int *constructed, int *class);
  * @param tlen The remaining size oof the asn.1 data
  * @param validate Call validate to verify tag data or @c NULL
  *
- * @return The asn.1 tag and data or @c NULL if not found
+ * @return The asn.1 tag and data (to be freed off by caller)
+ *         or @c NULL if not found
  */
 coap_binary_t *get_asn1_tag(coap_asn1_tag_t ltag, const uint8_t *ptr,
                             size_t tlen, asn1_validate validate);

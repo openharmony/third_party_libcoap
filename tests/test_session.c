@@ -1,6 +1,6 @@
 /* libcoap unit tests
  *
- * Copyright (C) 2013,2015-2018 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2013,2015-2018,2022-2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -24,7 +24,7 @@
 
 /* The maximum number of bits for fixed point integer representation.
  * This number must be identical to the definition of MAX_BITS in
- * net.c
+ * coap_net.c
  */
 #define MAX_BITS 8
 
@@ -34,7 +34,7 @@ static coap_session_t *session; /* Holds a reference-counted session object */
 COAP_STATIC_INLINE int
 fpeq(const coap_fixed_point_t a, const coap_fixed_point_t b) {
   return (a.integer_part == b.integer_part) &&
-    (a.fractional_part == b.fractional_part);
+         (a.fractional_part == b.fractional_part);
 }
 
 static void

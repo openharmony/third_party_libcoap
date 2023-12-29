@@ -1,7 +1,7 @@
 # CMakeLists.txt for libcoap
 #
 # Copyright (C) 2020 Carlos Gomes Martinho <carlos.gomes_martinho@siemens.com>
-# Copyright (C) 2020-2022 Jon Shallow <supjps-libcoap@jpshallow.com>
+# Copyright (C) 2020-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
@@ -12,10 +12,12 @@ cmake_minimum_required(VERSION 3.10)
 
 project(
   libcoap
-  VERSION 4.3.1
+  VERSION 4.3.4
   LANGUAGES CXX C)
 
 set(LIBCOAP_API_VERSION 3)
+set(LIBCOAP_ABI_VERSION 3.1.1)
+
 set(COAP_LIBRARY_NAME "coap-${LIBCOAP_API_VERSION}")
 
 option(
@@ -23,7 +25,60 @@ option(
   "Build shared libs"
   OFF)
 
+#
+# global compiler options
+# (need to do it before add_library())
+#
+
+add_compile_options(
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-pedantic>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wall>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wcast-qual>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wextra>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wformat-security>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Winline>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wmissing-declarations>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wmissing-prototypes>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wnested-externs>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wpointer-arith>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wshadow>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wstrict-prototypes>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wswitch-default>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wswitch-enum>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wunused>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wwrite-strings>)
+
+if(MINGW)
+add_compile_options(
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wno-format>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wno-format-security>)
+endif()
+
+if(${WARNING_TO_ERROR})
+add_compile_options(
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Werror>)
+endif()
+
+if(CMAKE_GENERATOR MATCHES "Visual Studio")
+  option(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS "Export all symbols when compiling to a .dll" ON)
+  # add_compile_options(/Wall /wd4100 /wd4820 /wd4668 /wd4061)
+  if(${WARNING_TO_ERROR})
+    add_compile_options(/WX)
+  endif()
+endif()
+
+#
+# The libcoap library
+#
+
 add_library(${COAP_LIBRARY_NAME})
+set_property(TARGET ${COAP_LIBRARY_NAME} PROPERTY C_STANDARD 99)
+if(${CMAKE_VERSION} VERSION_GREATER "3.20.0")
+  cmake_policy(SET CMP0115 OLD) # Supresses libcoap configuration warning
+endif()
+
+set_target_properties(${COAP_LIBRARY_NAME} PROPERTIES SOVERSION ${LIBCOAP_API_VERSION})
+set_target_properties(${COAP_LIBRARY_NAME} PROPERTIES VERSION ${LIBCOAP_ABI_VERSION})
 
 #
 # options to tweak the library
@@ -31,7 +86,7 @@ add_library(${COAP_LIBRARY_NAME})
 
 option(
   ENABLE_DTLS
-  "Enable building with DTLS support"
+  "enable building with DTLS support"
   ON)
 set(DTLS_BACKEND
     "default"
@@ -66,16 +121,48 @@ option(
   "compile with support for server mode code"
   ON)
 option(
+  ENABLE_OSCORE
+  "compile with support for OSCORE"
+  ON)
+option(
+  WITH_OBSERVE_PERSIST
+  "compile with observe persist support for server restarts"
+  ON)
+option(
   WITH_EPOLL
   "compile with epoll support"
   ON)
 option(
   ENABLE_SMALL_STACK
-  "Define if the system has small stack size"
+  "enable if the system has small stack size"
   OFF)
 option(
   ENABLE_TCP
-  "Enable building with TCP support"
+  "enable building with TCP support"
+  ON)
+option(
+  ENABLE_IPV4
+  "enable building with IPv4 support"
+  ON)
+option(
+  ENABLE_IPV6
+  "enable building with IPv6 support"
+  ON)
+option(
+  ENABLE_AF_UNIX
+  "enable building with Unix socket support"
+  ON)
+option(
+  ENABLE_WS
+  "enable building with WebSockets support"
+  ON)
+option(
+  ENABLE_ASYNC
+  "enable building with async separate response support"
+  ON)
+option(
+  ENABLE_Q_BLOCK
+  "enable building with Q-Block (RFC9177) support"
   ON)
 option(
   ENABLE_TESTS
@@ -89,6 +176,29 @@ option(
   ENABLE_DOCS
   "build also doxygen documentation"
   ON)
+option(
+  WARNING_TO_ERROR
+  "force all compiler warnings to be errors"
+  OFF)
+set(MAX_LOGGING_LEVEL
+    "8"
+    CACHE
+      STRING
+      "\
+Only build logging code up to and including the specified logging level (0 - 8)[default=8]]
+    ")
+set_property(
+  CACHE DTLS_BACKEND
+  PROPERTY STRINGS
+           "0"
+           "1"
+           "2"
+           "3"
+           "4"
+           "5"
+           "6"
+           "7"
+           "8")
 
 if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 11)
@@ -118,14 +228,19 @@ include(CheckTypeSize)
 include(TestBigEndian)
 
 # check for headers
+check_include_file(assert.h HAVE_ASSERT_H)
+check_include_file(string.h HAVE_STRING_H)
+check_include_file(strings.h HAVE_STRINGS_H)
 check_include_file(byteswap.h HAVE_BYTESWAP_H)
 check_include_file(inttypes.h HAVE_INTTYPES_H)
+check_include_file(errno.h HAVE_ERRNO_H)
 check_include_file(limits.h HAVE_LIMITS_H)
 check_include_file(memory.h HAVE_MEMORY_H)
 check_include_file(strings.h HAVE_STRINGS_H)
 check_include_file(string.h HAVE_STRING_H)
 check_include_file(sys/sysctl.h HAVE_SYS_SYSCTL_H)
 check_include_file(net/if.h HAVE_NET_IF_H)
+check_include_file(ifaddrs.h HAVE_IFADDRS_H)
 check_include_file(netinet/in.h HAVE_NETINET_IN_H)
 check_include_file(sys/epoll.h HAVE_EPOLL_H)
 check_include_file(sys/timerfd.h HAVE_TIMERFD_H)
@@ -135,7 +250,6 @@ check_include_file(netdb.h HAVE_NETDB_H)
 check_include_file(pthread.h HAVE_PTHREAD_H)
 check_include_file(stdlib.h HAVE_STDINT_H)
 check_include_file(stdint.h HAVE_STDLIB_H)
-check_include_file(syslog.h HAVE_SYSLOG_H)
 check_include_file(sys/ioctl.h HAVE_SYS_IOCTL_H)
 check_include_file(sys/socket.h HAVE_SYS_SOCKET_H)
 check_include_file(sys/stat.h HAVE_SYS_STAT_H)
@@ -160,11 +274,13 @@ check_function_exists(getaddrinfo HAVE_GETADDRINFO)
 check_function_exists(strnlen HAVE_STRNLEN)
 check_function_exists(strrchr HAVE_STRRCHR)
 check_function_exists(getrandom HAVE_GETRANDOM)
+check_function_exists(random HAVE_RANDOM)
 check_function_exists(if_nametoindex HAVE_IF_NAMETOINDEX)
 
 # check for symbols
-if(WIN32)
+if(WIN32 AND NOT MINGW)
   set(HAVE_STRUCT_CMSGHDR 1)
+  message(STATUS "setting HAVE_STRUCT_CMSGHDR")
 else()
   check_symbol_exists(
     CMSG_FIRSTHDR
@@ -186,18 +302,90 @@ else()
   message(STATUS "compiling without server support")
 endif()
 
+if(${ENABLE_OSCORE})
+  set(COAP_OSCORE_SUPPORT "1")
+  message(STATUS "compiling with OSCORE support")
+else()
+  message(STATUS "compiling without OSCORE support")
+endif()
+
+if(${ENABLE_WS} AND $(ENABLE_TCP))
+  set(COAP_WS_SUPPORT "1")
+  message(STATUS "compiling with WebSockets support")
+else()
+  if(${ENABLE_WS})
+    set(ENABLE_WS OFF)
+    message(STATUS "WebSockets disabled as TCP not enabled")
+  endif()
+  message(STATUS "compiling without WebSockets support")
+endif()
+
+if(${ENABLE_ASYNC})
+  set(COAP_ASYNC_SUPPORT "1")
+  message(STATUS "compiling with async separate response support")
+else()
+  message(STATUS "compiling without async separate response support")
+endif()
+
+if(${ENABLE_IPV4})
+  set(COAP_IPV4_SUPPORT "1")
+  message(STATUS "compiling with IPv4 support")
+else()
+  message(STATUS "compiling without IPv4 support")
+endif()
+
+if(${ENABLE_IPV6})
+  set(COAP_IPV6_SUPPORT "1")
+  message(STATUS "compiling with IPv6 support")
+else()
+  message(STATUS "compiling without IPv6 support")
+endif()
+
+if(${ENABLE_AF_UNIX})
+  set(COAP_AF_UNIX_SUPPORT "1")
+  message(STATUS "compiling with Unix socket support")
+else()
+  message(STATUS "compiling without Unix socket support")
+endif()
+
+if(${ENABLE_Q_BLOCK})
+  set(COAP_Q_BLOCK_SUPPORT "1")
+  message(STATUS "compiling with Q-Block (RFC9177) support")
+else()
+  message(STATUS "compiling without Q-Block (RFC9177) support")
+endif()
+
+
+if(${WITH_OBSERVE_PERSIST})
+  set(COAP_WITH_OBSERVE_PERSIST "1")
+  message(STATUS "compiling with observe persistence support")
+else()
+  message(STATUS "compiling without observe persistence support")
+endif()
+
 if(${WITH_EPOLL}
-   AND ${HAVE_EPOLL_H}
-   AND ${HAVE_TIMERFD_H})
+   AND HAVE_EPOLL_H
+   AND HAVE_TIMERFD_H)
   set(COAP_EPOLL_SUPPORT "1")
   message(STATUS "compiling with epoll support")
 else()
+  if(${WITH_EPOLL})
+    set(WITH_EPOLL OFF)
+    message(STATUS "epoll disabled as kernel support not available")
+  endif()
   message(STATUS "compiling without epoll support")
 endif()
 
 if(ENABLE_SMALL_STACK)
   set(ENABLE_SMALL_STACK "${ENABLE_SMALL_STACK}")
   message(STATUS "compiling with small stack support")
+endif()
+
+if(${MAX_LOGGING_LEVEL} MATCHES "[0-7]")
+  set(COAP_MAX_LOGGING_LEVEL ${MAX_LOGGING_LEVEL})
+  message(STATUS "compiling with max logging level set to ${MAX_LOGGING_LEVEL}")
+else()
+  message(STATUS "compiling with max logging level set to none")
 endif()
 
 set(WITH_GNUTLS OFF)
@@ -230,7 +418,7 @@ function(compile_tinydtls)
 
   externalproject_add_step(
     external_tinydtls autoreconf
-    COMMAND autoreconf --force --install
+    COMMAND ./autogen.sh
     ALWAYS 1
     WORKING_DIRECTORY "${TINYDTLS_SOURCES_DIR}"
     DEPENDERS configure
@@ -278,14 +466,14 @@ if(ENABLE_DTLS)
     if(GnuTLS_FOUND)
       set(WITH_GNUTLS ON)
       message(STATUS "compiling with gnutls support")
-      set(HAVE_LIBGNUTLS 1)
+      set(COAP_WITH_LIBGNUTLS 1)
     else()
       # gnutls not found
       find_package(OpenSSL)
       if(OpenSSL_FOUND)
         set(WITH_OPENSSL ON)
         message(STATUS "compiling with openssl support")
-        set(HAVE_OPENSSL 1)
+        set(COAP_WITH_LIBOPENSSL 1)
       else()
         # openssl not found
         # libmbedtls (e.g. debian libmbedtls-dev)
@@ -293,7 +481,7 @@ if(ENABLE_DTLS)
         if(MbedTLS_FOUND)
           set(WITH_MBEDTLS ON)
           message(STATUS "compiling with mbedtls support")
-          set(HAVE_MBEDTLS 1)
+          set(COAP_WITH_LIBMBEDTLS 1)
         else()
           # mbedtls not found
           if(USE_VENDORED_TINYDTLS)
@@ -314,7 +502,7 @@ if(ENABLE_DTLS)
 
           set(WITH_TINYDTLS ON)
           message(STATUS "compiling with tinydtls support")
-          set(HAVE_LIBTINYDTLS 1)
+          set(COAP_WITH_LIBTINYDTLS 1)
 
         endif()
 
@@ -336,7 +524,7 @@ if(ENABLE_DTLS)
       find_package(GnuTLS REQUIRED)
       set(WITH_GNUTLS ON)
       message(STATUS "compiling with gnutls support")
-      set(HAVE_LIBGNUTLS 1)
+      set(COAP_WITH_LIBGNUTLS 1)
     endif()
 
     if(DTLS_BACKEND
@@ -346,7 +534,7 @@ if(ENABLE_DTLS)
       find_package(OpenSSL REQUIRED)
       set(WITH_OPENSSL ON)
       message(STATUS "compiling with openssl support")
-      set(HAVE_OPENSSL 1)
+      set(COAP_WITH_LIBOPENSSL 1)
     endif()
 
     if(DTLS_BACKEND
@@ -356,7 +544,7 @@ if(ENABLE_DTLS)
       find_package(MbedTLS REQUIRED)
       set(WITH_MBEDTLS ON)
       message(STATUS "compiling with mbedtls support")
-      set(HAVE_MBEDTLS 1)
+      set(COAP_WITH_LIBMBEDTLS 1)
     endif()
 
     if(DTLS_BACKEND
@@ -371,7 +559,7 @@ if(ENABLE_DTLS)
 
       message(STATUS "compiling with tinydtls support")
       set(WITH_TINYDTLS ON)
-      set(HAVE_LIBTINYDTLS 1)
+      set(COAP_WITH_LIBTINYDTLS 1)
 
     endif()
 
@@ -402,12 +590,24 @@ set(LIBCOAP_PACKAGE_NAME "${PACKAGE_NAME}")
 set(LIBCOAP_PACKAGE_STRING "${PACKAGE_STRING}")
 set(LIBCOAP_PACKAGE_BUGREPORT "${PACKAGE_BUGREPORT}")
 
+message(STATUS "")
+message(STATUS "libcoap Configuration Summary:")
+message(STATUS "")
 message(STATUS "PACKAGE VERSION..................${PACKAGE_VERSION}")
-message(STATUS "PACKAGE BUILD....................${LIBCOAP_PACKAGE_BUILD}")
+message(STATUS "PACKAGE SOURCE...................${LIBCOAP_PACKAGE_BUILD}")
+message(STATUS "LIBRARY API VERSION..............${LIBCOAP_API_VERSION}")
+message(STATUS "LIBRARY ABI VERSION..............${LIBCOAP_ABI_VERSION}")
 message(STATUS "ENABLE_DTLS:.....................${ENABLE_DTLS}")
 message(STATUS "ENABLE_TCP:......................${ENABLE_TCP}")
+message(STATUS "ENABLE_IPV4:.....................${ENABLE_IPV4}")
+message(STATUS "ENABLE_IPV6:.....................${ENABLE_IPV6}")
+message(STATUS "ENABLE_AF_UNIX:..................${ENABLE_AF_UNIX}")
+message(STATUS "ENABLE_WEBSOCKETS:...............${ENABLE_WS}")
+message(STATUS "ENABLE_Q_BLOCK:..................${ENABLE_Q_BLOCK}")
 message(STATUS "ENABLE_CLIENT_MODE:..............${ENABLE_CLIENT_MODE}")
 message(STATUS "ENABLE_SERVER_MODE:..............${ENABLE_SERVER_MODE}")
+message(STATUS "ENABLE_OSCORE:...................${ENABLE_OSCORE}")
+message(STATUS "ENABLE_ASYNC:....................${ENABLE_ASYNC}")
 message(STATUS "ENABLE_DOCS:.....................${ENABLE_DOCS}")
 message(STATUS "ENABLE_EXAMPLES:.................${ENABLE_EXAMPLES}")
 message(STATUS "DTLS_BACKEND:....................${DTLS_BACKEND}")
@@ -415,15 +615,22 @@ message(STATUS "WITH_GNUTLS:.....................${WITH_GNUTLS}")
 message(STATUS "WITH_TINYDTLS:...................${WITH_TINYDTLS}")
 message(STATUS "WITH_OPENSSL:....................${WITH_OPENSSL}")
 message(STATUS "WITH_MBEDTLS:....................${WITH_MBEDTLS}")
-message(STATUS "HAVE_LIBTINYDTLS:................${HAVE_LIBTINYDTLS}")
-message(STATUS "HAVE_LIBGNUTLS:..................${HAVE_LIBGNUTLS}")
-message(STATUS "HAVE_OPENSSL:....................${HAVE_OPENSSL}")
-message(STATUS "HAVE_MBEDTLS:....................${HAVE_MBEDTLS}")
+message(STATUS "HAVE_LIBTINYDTLS:................${COAP_WITH_LIBTINYDTLS}")
+message(STATUS "HAVE_LIBGNUTLS:..................${COAP_WITH_LIBGNUTLS}")
+message(STATUS "HAVE_LIBOPENSSL:.................${COAP_WITH_LIBOPENSSL}")
+message(STATUS "HAVE_LIBMBEDTLS:.................${COAP_WITH_LIBMBEDTLS}")
 message(STATUS "WITH_EPOLL:......................${WITH_EPOLL}")
-message(STATUS "CMAKE_C_COMPILER:................${CMAKE_C_COMPILER}")
+message(STATUS "WITH_OBSERVE_PERSIST:............${WITH_OBSERVE_PERSIST}")
 message(STATUS "BUILD_SHARED_LIBS:...............${BUILD_SHARED_LIBS}")
+message(STATUS "MAX_LOGGING_LEVEL:...............${MAX_LOGGING_LEVEL}")
+message(STATUS "WARNING_TO_ERROR:................${WARNING_TO_ERROR}")
+message(STATUS "CMAKE_C_COMPILER:................${CMAKE_C_COMPILER}")
+message(STATUS "CMAKE_CXX_COMPILER_ID:...........${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "CMAKE_BUILD_TYPE:................${CMAKE_BUILD_TYPE}")
 message(STATUS "CMAKE_SYSTEM_PROCESSOR:..........${CMAKE_SYSTEM_PROCESSOR}")
+message(STATUS "CMAKE_HOST_SYSTEM_NAME:..........${CMAKE_HOST_SYSTEM_NAME}")
+message(STATUS "CMAKE_GENERATOR:.................${CMAKE_GENERATOR}")
+message(STATUS "")
 
 set(top_srcdir "${CMAKE_CURRENT_LIST_DIR}")
 set(top_builddir "${CMAKE_CURRENT_BINARY_DIR}")
@@ -452,58 +659,66 @@ target_sources(
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src/coap_address.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_asn1.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_async.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_block.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_cache.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_debug.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_dtls.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_encode.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_event.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_hashkey.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_io.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_layers.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_mem.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_net.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_netif.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_notls.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_option.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_oscore.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_pdu.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_prng.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_resource.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_session.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_str.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_subscribe.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_tcp.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_time.c
-          ${CMAKE_CURRENT_LIST_DIR}/src/block.c
-          ${CMAKE_CURRENT_LIST_DIR}/src/encode.c
-          ${CMAKE_CURRENT_LIST_DIR}/src/mem.c
-          ${CMAKE_CURRENT_LIST_DIR}/src/net.c
-          ${CMAKE_CURRENT_LIST_DIR}/src/pdu.c
-          ${CMAKE_CURRENT_LIST_DIR}/src/resource.c
-          ${CMAKE_CURRENT_LIST_DIR}/src/str.c
-          ${CMAKE_CURRENT_LIST_DIR}/src/uri.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_uri.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_ws.c
           # no need to parse those files if we do not need them
-          $<$<BOOL:${HAVE_OPENSSL}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_openssl.c>
-          $<$<BOOL:${HAVE_LIBTINYDTLS}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_tinydtls.c>
-          $<$<BOOL:${HAVE_LIBGNUTLS}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_gnutls.c>
-          $<$<BOOL:${HAVE_MBEDTLS}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_mbedtls.c>
+          $<$<BOOL:${COAP_WITH_LIBOPENSSL}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_openssl.c>
+          $<$<BOOL:${COAP_WITH_LIBTINYDTLS}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_tinydtls.c>
+          $<$<BOOL:${COAP_WITH_LIBGNUTLS}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_gnutls.c>
+          $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_mbedtls.c>
+          # needed for OSCORE is enabled
+          $<$<BOOL:${COAP_OSCORE_SUPPORT}>:${CMAKE_CURRENT_LIST_DIR}/src/oscore/oscore.c>
+          $<$<BOOL:${COAP_OSCORE_SUPPORT}>:${CMAKE_CURRENT_LIST_DIR}/src/oscore/oscore_cbor.c>
+          $<$<BOOL:${COAP_OSCORE_SUPPORT}>:${CMAKE_CURRENT_LIST_DIR}/src/oscore/oscore_context.c>
+          $<$<BOOL:${COAP_OSCORE_SUPPORT}>:${CMAKE_CURRENT_LIST_DIR}/src/oscore/oscore_cose.c>
+          $<$<BOOL:${COAP_OSCORE_SUPPORT}>:${CMAKE_CURRENT_LIST_DIR}/src/oscore/oscore_crypto.c>
           # headers
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/libcoap.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_address.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_async.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_block.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_cache.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_debug.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_dtls.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_encode.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_event.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_hashkey.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_io.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_mem.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_net.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_option.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_pdu.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_prng.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_resource.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_session.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_str.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_subscribe.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_time.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/block.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/encode.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/libcoap.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/lwippools.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/mem.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/net.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/pdu.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/resource.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/str.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/uri.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/uthash.h
-          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/utlist.h)
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_uri.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_ws.h)
 target_include_directories(
   ${COAP_LIBRARY_NAME}
   PUBLIC # config headers are generated during configuration time
@@ -511,18 +726,19 @@ target_include_directories(
          $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/>
          $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include/>
          $<INSTALL_INTERFACE:include/>
-         $<$<AND:$<BOOL:${HAVE_LIBTINYDTLS}>,$<BOOL:${USE_VENDORED_TINYDTLS}>>:${CMAKE_BINARY_DIR}/include/tinydtls>
-         $<$<BOOL:${HAVE_LIBGNUTLS}>:${GNUTLS_INCLUDE_DIR}>
-         $<$<BOOL:${HAVE_MBEDTLS}>:${MBEDTLS_INCLUDE_DIRS}>)
+         $<$<AND:$<BOOL:${COAP_WITH_LIBTINYDTLS}>,$<BOOL:${USE_VENDORED_TINYDTLS}>>:${CMAKE_BINARY_DIR}/include/tinydtls>
+         $<$<BOOL:${COAP_WITH_LIBGNUTLS}>:${GNUTLS_INCLUDE_DIR}>
+         $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${MBEDTLS_INCLUDE_DIRS}>)
 target_link_libraries(
   ${COAP_LIBRARY_NAME}
-  PUBLIC $<$<BOOL:${HAVE_OPENSSL}>:OpenSSL::SSL>
-         $<$<BOOL:${HAVE_OPENSSL}>:OpenSSL::Crypto>
-         $<$<BOOL:${HAVE_LIBGNUTLS}>:${GNUTLS_LIBRARIES}>
-         $<$<BOOL:${HAVE_LIBTINYDTLS}>:tinydtls>
-         $<$<BOOL:${HAVE_MBEDTLS}>:${MBEDTLS_LIBRARY}>
-         $<$<BOOL:${HAVE_MBEDTLS}>:${MBEDX509_LIBRARY}>
-         $<$<BOOL:${HAVE_MBEDTLS}>:${MBEDCRYPTO_LIBRARY}>)
+  PUBLIC $<$<BOOL:${COAP_WITH_LIBOPENSSL}>:OpenSSL::SSL>
+         $<$<BOOL:${COAP_WITH_LIBOPENSSL}>:OpenSSL::Crypto>
+         $<$<BOOL:${COAP_WITH_LIBGNUTLS}>:${GNUTLS_LIBRARIES}>
+         $<$<BOOL:${COAP_WITH_LIBTINYDTLS}>:tinydtls>
+         $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${MBEDTLS_LIBRARY}>
+         $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${MBEDX509_LIBRARY}>
+         $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${MBEDCRYPTO_LIBRARY}>
+         $<$<BOOL:${MINGW}>:ws2_32>)
 
 target_compile_options(
   ${COAP_LIBRARY_NAME}
@@ -532,28 +748,6 @@ add_library(
   ${PROJECT_NAME}::${COAP_LIBRARY_NAME}
   ALIAS
   ${COAP_LIBRARY_NAME})
-
-#
-# compiler options
-#
-
-add_compile_options(
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-pedantic>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wall>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wcast-qual>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wextra>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wformat-security>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Winline>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wmissing-declarations>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wmissing-prototypes>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wnested-externs>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wpointer-arith>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wshadow>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wstrict-prototypes>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wswitch-default>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wswitch-enum>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wunused>
-  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-Wwrite-strings>)
 
 #
 # tests
@@ -570,6 +764,8 @@ if(ENABLE_TESTS)
     ${CMAKE_CURRENT_LIST_DIR}/tests/test_error_response.h
     ${CMAKE_CURRENT_LIST_DIR}/tests/test_options.c
     ${CMAKE_CURRENT_LIST_DIR}/tests/test_options.h
+    ${CMAKE_CURRENT_LIST_DIR}/tests/test_oscore.c
+    ${CMAKE_CURRENT_LIST_DIR}/tests/test_oscore.h
     ${CMAKE_CURRENT_LIST_DIR}/tests/test_pdu.c
     ${CMAKE_CURRENT_LIST_DIR}/tests/test_pdu.h
     ${CMAKE_CURRENT_LIST_DIR}/tests/test_sendqueue.c
@@ -606,13 +802,18 @@ if(ENABLE_EXAMPLES)
   target_link_libraries(coap-server
                         PUBLIC ${PROJECT_NAME}::${COAP_LIBRARY_NAME})
 
-  if(NOT WIN32)
+  if(NOT WIN32 AND NOT MINGW)
     add_executable(etsi_iot_01 ${CMAKE_CURRENT_LIST_DIR}/examples/etsi_iot_01.c)
     target_link_libraries(etsi_iot_01
                           PUBLIC ${PROJECT_NAME}::${COAP_LIBRARY_NAME})
 
     add_executable(tiny ${CMAKE_CURRENT_LIST_DIR}/examples/tiny.c)
     target_link_libraries(tiny PUBLIC ${PROJECT_NAME}::${COAP_LIBRARY_NAME})
+
+    add_executable(oscore-interop-server
+                   ${CMAKE_CURRENT_LIST_DIR}/examples/oscore-interop-server.c)
+    target_link_libraries(oscore-interop-server
+                          PUBLIC ${PROJECT_NAME}::${COAP_LIBRARY_NAME})
   endif()
 endif()
 
@@ -629,8 +830,8 @@ if(ENABLE_DOCS)
     set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
 
     # Make necessary temporary directories
-    file(MAKE_DIRECTORY  ${CMAKE_BINARY_DIR}/doc/man_tmp)
-    file(MAKE_DIRECTORY  ${CMAKE_BINARY_DIR}/doc/man_html)
+    file(MAKE_DIRECTORY  ${CMAKE_CURRENT_BINARY_DIR}/doc/man_tmp)
+    file(MAKE_DIRECTORY  ${CMAKE_CURRENT_BINARY_DIR}/doc/man_html)
 
     # request to configure the file
     configure_file(
@@ -642,6 +843,7 @@ if(ENABLE_DOCS)
     # application
     add_custom_target(
       doc_doxygen ALL
+      COMMAND ${DOXYGEN_EXECUTABLE} -u > /dev/null 2>&1
       COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
       COMMENT "Generating API documentation with Doxygen"
@@ -699,10 +901,8 @@ install(
   PATTERN "*.h"
   PATTERN "coap.h" EXCLUDE
   PATTERN "coap_riot.h" EXCLUDE
-  PATTERN "lwippools.h" EXCLUDE
-  PATTERN "utlist.h" EXCLUDE
-  PATTERN "uthash.h" EXCLUDE
-  PATTERN "*_internal.h" EXCLUDE)
+  PATTERN "*_internal.h" EXCLUDE
+  PATTERN "oscore*" EXCLUDE)
 install(
   DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
@@ -714,9 +914,9 @@ if(ENABLE_EXAMPLES)
     TARGETS coap-server coap-client coap-rd
     DESTINATION ${CMAKE_INSTALL_BINDIR}
     COMPONENT dev)
-  if(NOT WIN32)
+  if(NOT WIN32 AND NOT MINGW)
     install(
-      TARGETS etsi_iot_01 tiny
+      TARGETS etsi_iot_01 tiny oscore-interop-server
       DESTINATION ${CMAKE_INSTALL_BINDIR}
       COMPONENT dev)
   endif()

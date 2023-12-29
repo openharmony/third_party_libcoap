@@ -4,4 +4,7 @@ lwip-contrib
 
 # never objects, and not the resulting binary
 *.o
+client
+client-dtls
 server
+server-dtls

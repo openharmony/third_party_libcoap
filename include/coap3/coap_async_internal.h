@@ -1,7 +1,7 @@
 /*
  * coap_async_internal.h -- state management for asynchronous messages
  *
- * Copyright (C) 2010-2022 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -18,10 +18,10 @@
 #define COAP_ASYNC_INTERNAL_H_
 
 #include "coap_internal.h"
-#include "net.h"
+#include "coap_net.h"
 
-/* Note that if COAP_SERVER_SUPPORT is not set, then WITHOUT_ASYNC undefined */
-#ifndef WITHOUT_ASYNC
+/* Note that if COAP_SERVER_SUPPORT is not set, then COAP_ASYNC_SUPPORT undefined */
+#if COAP_ASYNC_SUPPORT
 
 /**
  * @ingroup internal_api
@@ -38,7 +38,7 @@ struct coap_async_t {
                              0 indicates never trigger */
   coap_session_t *session;         /**< transaction session */
   coap_pdu_t *pdu;                 /**< copy of request pdu */
-  void* appdata;                   /** User definable data pointer */
+  void *appdata;                   /**< User definable data pointer */
 };
 
 /**
@@ -59,11 +59,10 @@ coap_tick_t coap_check_async(coap_context_t *context, coap_tick_t now);
  *
  * @param context The context to remove all async entries from.
  */
-void
-coap_delete_all_async(coap_context_t *context);
+void coap_delete_all_async(coap_context_t *context);
 
 /** @} */
 
-#endif /*  WITHOUT_ASYNC */
+#endif /* COAP_ASYNC_SUPPORT */
 
 #endif /* COAP_ASYNC_INTERNAL_H_ */

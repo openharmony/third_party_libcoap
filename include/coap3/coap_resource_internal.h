@@ -1,7 +1,7 @@
 /*
  * coap_resource_internal.h -- generic resource handling
  *
- * Copyright (C) 2010,2011,2014-2022 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010,2011,2014-2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -18,7 +18,7 @@
 #define COAP_RESOURCE_INTERNAL_H_
 
 #include "coap_internal.h"
-#include "uthash.h"
+#include "coap_uthash_internal.h"
 
 #if COAP_SERVER_SUPPORT
 /**
@@ -27,6 +27,14 @@
  * Internal API for handling resources
  * @{
  */
+
+/**
+ * Limits the number of subscribers for each resource that this server support.
+ * Zero means there is no maximum.
+ */
+#ifndef COAP_RESOURCE_MAX_SUBSCRIBER
+#define COAP_RESOURCE_MAX_SUBSCRIBER 0
+#endif /* COAP_RESOURCE_MAX_SUBSCRIBER */
 
 /**
 * Abstraction of attribute associated with a resource.
@@ -93,7 +101,7 @@ struct coap_resource_t {
   /**
    * Array valid names this host is known by (proxy support)
    */
-  coap_str_const_t ** proxy_name_list;
+  coap_str_const_t **proxy_name_list;
 
   /**
    * This pointer is under user control. It can be used to store context for

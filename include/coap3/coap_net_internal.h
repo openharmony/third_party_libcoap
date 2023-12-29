@@ -2,7 +2,7 @@
  * coap_net_internal.h -- CoAP context internal information
  * exposed to application programming
  *
- * Copyright (C) 2010-2022 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -19,6 +19,7 @@
 #define COAP_NET_INTERNAL_H_
 
 #include "coap_internal.h"
+#include "coap_subscribe.h"
 
 /**
  * @ingroup internal_api
@@ -55,15 +56,15 @@ struct coap_context_t {
   coap_resource_t *proxy_uri_resource; /**< can be used for handling
                                             proxy URI resources */
   coap_resource_release_userdata_handler_t release_userdata;
-                                        /**< function to  release user_data
-                                             when resource is deleted */
+  /**< function to  release user_data
+       when resource is deleted */
 #endif /* COAP_SERVER_SUPPORT */
 
-#ifndef WITHOUT_ASYNC
+#if COAP_ASYNC_SUPPORT
   /**
    * list of asynchronous message ids */
   coap_async_t *async_state;
-#endif /* WITHOUT_ASYNC */
+#endif /* COAP_ASYNC_SUPPORT */
 
   /**
    * The time stamp in the first element of the sendqeue is relative
@@ -79,34 +80,62 @@ struct coap_context_t {
 
 #ifdef WITH_CONTIKI
   struct uip_udp_conn *conn;      /**< uIP connection object */
-  struct etimer retransmit_timer; /**< fires when the next packet must be
-                                       sent */
-  struct etimer notify_timer;     /**< used to check resources periodically */
+  struct ctimer prepare_timer;    /**< fires when it's time to call
+                                       coap_io_prepare_io */
 #endif /* WITH_CONTIKI */
 
 #ifdef WITH_LWIP
+  coap_lwip_input_wait_handler_t input_wait; /** Input wait / timeout handler if set */
+  void *input_arg;                /** argument to pass it input handler */
   uint8_t timer_configured;       /**< Set to 1 when a retransmission is
                                    *   scheduled using lwIP timers for this
                                    *   context, otherwise 0. */
 #endif /* WITH_LWIP */
+#if COAP_OSCORE_SUPPORT
+  struct oscore_ctx_t *p_osc_ctx; /**< primary oscore context  */
+#endif /* COAP_OSCORE_SUPPORT */
 
 #if COAP_CLIENT_SUPPORT
-  coap_response_handler_t response_handler;
+  coap_response_handler_t response_handler; /**< Called when a response is
+                                                 received */
 #endif /* COAP_CLIENT_SUPPORT */
-  coap_nack_handler_t nack_handler;
-  coap_ping_handler_t ping_handler;
-  coap_pong_handler_t pong_handler;
+  coap_nack_handler_t nack_handler; /**< Called when a response issue has
+                                         occurred */
+  coap_ping_handler_t ping_handler; /**< Called when a CoAP ping is received */
+  coap_pong_handler_t pong_handler; /**< Called when a ping response
+                                         is received */
+
+#if COAP_SERVER_SUPPORT
+  coap_observe_added_t observe_added; /**< Called when there is a new observe
+                                           subscription request */
+  coap_observe_deleted_t observe_deleted; /**< Called when there is a observe
+                                           subscription de-register request */
+  void *observe_user_data; /**< App provided data for use in observe_added or
+                                observe_deleted */
+  uint32_t observe_save_freq; /**< How frequently to update observe value */
+  coap_track_observe_value_t track_observe_value; /**< Callback to save observe
+                                                       value when updated */
+  coap_dyn_resource_added_t dyn_resource_added; /**< Callback to save dynamic
+                                                     resource when created */
+  coap_resource_deleted_t resource_deleted; /**< Invoked when resource
+                                                 is deleted */
+#if COAP_WITH_OBSERVE_PERSIST
+  coap_bin_const_t *dyn_resource_save_file; /** Where dynamic resource requests
+                                                that create resources are
+                                                tracked */
+  coap_bin_const_t *obs_cnt_save_file; /** Where resource observe counters are
+                                            tracked */
+  coap_bin_const_t *observe_save_file; /** Where observes are tracked */
+  coap_pdu_t *unknown_pdu;        /** PDU used for unknown resource request */
+  coap_session_t *unknown_session; /** Session used for unknown resource request */
+#endif /* COAP_WITH_OBSERVE_PERSIST */
+#endif /* COAP_SERVER_SUPPORT */
 
   /**
    * Callback function that is used to signal events to the
    * application.  This field is set by coap_set_event_handler().
    */
   coap_event_handler_t handle_event;
-
-  ssize_t (*network_send)(coap_socket_t *sock, const coap_session_t *session,
-                          const uint8_t *data, size_t datalen);
-
-  ssize_t (*network_read)(coap_socket_t *sock, coap_packet_t *packet);
 
   void *dtls_context;
 
@@ -140,13 +169,22 @@ struct coap_context_t {
                                         when creating a cache-key */
 #endif /* COAP_SERVER_SUPPORT */
   void *app;                       /**< application-specific data */
+  uint32_t max_token_size;         /**< Largest token size supported RFC8974 */
 #ifdef COAP_EPOLL_SUPPORT
   int epfd;                        /**< External FD for epoll */
   int eptimerfd;                   /**< Internal FD for timeout */
   coap_tick_t next_timeout;        /**< When the next timeout is to occur */
-#endif /* COAP_EPOLL_SUPPORT */
+#else /* ! COAP_EPOLL_SUPPORT */
+  fd_set readfds, writefds, exceptfds; /**< Used for select call
+                                            in coap_io_process_with_fds() */
+  coap_socket_t *sockets[64];      /**< Track different socket information
+                                        in coap_io_process_with_fds */
+  unsigned int num_sockets;        /**< Number of sockets being tracked */
+#endif /* ! COAP_EPOLL_SUPPORT */
 #if COAP_SERVER_SUPPORT
   uint8_t observe_pending;         /**< Observe response pending */
+  uint8_t observe_no_clear;        /**< Observe 4.04 not to be sent on deleting
+                                        resource */
   uint8_t mcast_per_resource;      /**< Mcast controlled on a per resource
                                         basis */
 #endif /* COAP_SERVER_SUPPORT */
@@ -198,12 +236,12 @@ unsigned int coap_adjust_basetime(coap_context_t *ctx, coap_tick_t now);
 /**
  * Returns the next pdu to send without removing from sendqeue.
  */
-coap_queue_t *coap_peek_next( coap_context_t *context );
+coap_queue_t *coap_peek_next(coap_context_t *context);
 
 /**
  * Returns the next pdu to send and removes it from the sendqeue.
  */
-coap_queue_t *coap_pop_next( coap_context_t *context );
+coap_queue_t *coap_pop_next(coap_context_t *context);
 
 /**
  * Handles retransmissions of confirmable messages
@@ -252,9 +290,8 @@ int coap_remove_from_queue(coap_queue_t **queue,
                            coap_mid_t id,
                            coap_queue_t **node);
 
-coap_mid_t
-coap_wait_ack( coap_context_t *context, coap_session_t *session,
-               coap_queue_t *node);
+coap_mid_t coap_wait_ack(coap_context_t *context, coap_session_t *session,
+                         coap_queue_t *node);
 
 /**
  * Cancels all outstanding messages for session @p session that have the specified
@@ -263,12 +300,10 @@ coap_wait_ack( coap_context_t *context, coap_session_t *session,
  * @param context      The context in use.
  * @param session      Session of the messages to remove.
  * @param token        Message token.
- * @param token_length Actual length of @p token.
  */
 void coap_cancel_all_messages(coap_context_t *context,
                               coap_session_t *session,
-                              const uint8_t *token,
-                              size_t token_length);
+                              coap_bin_const_t *token);
 
 /**
 * Cancels all outstanding messages for session @p session.
@@ -277,10 +312,9 @@ void coap_cancel_all_messages(coap_context_t *context,
 * @param session      Session of the messages to remove.
 * @param reason       The reasion for the session cancellation
 */
-void
-coap_cancel_session_messages(coap_context_t *context,
-                             coap_session_t *session,
-                             coap_nack_reason_t reason);
+void coap_cancel_session_messages(coap_context_t *context,
+                                  coap_session_t *session,
+                                  coap_nack_reason_t reason);
 
 /**
  * Dispatches the PDUs from the receive queue in given context.
@@ -382,5 +416,6 @@ int coap_client_delay_first(coap_session_t *session);
 
 /** @} */
 
-#endif /* COAP_NET_INTERNAL_H_ */
+extern int coap_started;
 
+#endif /* COAP_NET_INTERNAL_H_ */

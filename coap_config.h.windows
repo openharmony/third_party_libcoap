@@ -1,3 +1,14 @@
+/*
+ * coap_config.h.windows -- Windows configuration for libcoap
+ *
+ * Copyright (C) 2017-2023 Olaf Bergmann <bergmann@tzi.org> and others
+ *
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * This file is part of the CoAP library libcoap. Please see README for terms
+ * of use.
+ */
+
 #ifndef COAP_CONFIG_H_
 #define COAP_CONFIG_H_
 
@@ -68,7 +79,63 @@
 #endif
 
 #ifndef COAP_DISABLE_TCP
+/* Define to 1 to build without TCP support. */
 #define COAP_DISABLE_TCP 0
+#endif
+
+#ifndef COAP_IPV4_SUPPORT
+/* Define to 1 to build with IPv4 support. */
+#define COAP_IPV4_SUPPORT 1
+#endif
+
+#ifndef COAP_IPV6_SUPPORT
+/* Define to 1 to build with IPv6 support. */
+#define COAP_IPV6_SUPPORT 1
+#endif
+
+#ifndef COAP_AF_UNIX_SUPPORT
+/* Define to 1 to build with Unix socket support. */
+#define COAP_AF_UNIX_SUPPORT 0
+#endif
+
+#ifndef COAP_CLIENT_SUPPORT
+/* Define if libcoap supports client mode code. */
+#define COAP_CLIENT_SUPPORT 1
+#endif
+
+#ifndef COAP_SERVER_SUPPORT
+/* Define if libcoap supports server mode code. */
+#define COAP_SERVER_SUPPORT 1
+#endif
+
+#ifndef COAP_WITH_OBSERVE_PERSIST
+/* Define to build support for persisting observes. */
+#define COAP_WITH_OBSERVE_PERSIST 0
+#endif
+
+#ifndef COAP_WS_SUPPORT
+/* Define to 1 to build with WebSockets support. */
+#define COAP_WS_SUPPORT 0
+#endif
+
+#ifndef COAP_Q_BLOCK_SUPPORT
+/* Define to 1 to build with Q-Block (RFC9177) support. */
+#define COAP_Q_BLOCK_SUPPORT 0
+#endif
+
+#ifndef COAP_MAX_LOGGING_LEVEL
+/* Define to 0-8 for maximum logging level. */
+#define COAP_MAX_LOGGING_LEVEL 8
+#endif
+
+#ifndef COAP_OSCORE_SUPPORT
+/* Define to 1 to build with OSCORE support. */
+#define COAP_OSCORE_SUPPORT 1
+#endif
+
+#ifndef COAP_ASYNC_SUPPORT
+/* Define to 1 to build with support for async separate responses. */
+#define COAP_ASYNC_SUPPORT 1
 #endif
 
 /* Define to the address where bug reports for this package should be sent. */
@@ -78,7 +145,7 @@
 #define PACKAGE_NAME "libcoap"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "libcoap 4.3.1"
+#define PACKAGE_STRING "libcoap 4.3.4"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "libcoap"
@@ -87,7 +154,7 @@
 #define PACKAGE_URL "https://libcoap.net/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "4.3.1"
+#define PACKAGE_VERSION "4.3.4"
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1

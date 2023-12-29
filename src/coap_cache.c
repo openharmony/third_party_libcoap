@@ -1,6 +1,6 @@
 /* coap_cache.c -- Caching of CoAP requests
 *
-* Copyright (C) 2020 Olaf Bergmann <bergmann@tzi.org>
+* Copyright (C) 2020-2023 Olaf Bergmann <bergmann@tzi.org>
 *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -24,11 +24,11 @@ is_cache_key(uint16_t option_type, size_t cache_ignore_count,
              const uint16_t *cache_ignore_options) {
   size_t i;
 
-  /* https://tools.ietf.org/html/rfc7252#section-5.4.6 Nocachekey definition */
+  /* https://rfc-editor.org/rfc/rfc7252#section-5.4.6 Nocachekey definition */
   if ((option_type & 0x1e) == 0x1c)
     return 0;
   /*
-   * https://tools.ietf.org/html/rfc7641#section-2 Observe is not a
+   * https://rfc-editor.org/rfc/rfc7641#section-2 Observe is not a
    * part of the cache-key.
    */
   if (option_type == COAP_OPTION_OBSERVE)
@@ -49,21 +49,19 @@ coap_cache_ignore_options(coap_context_t *ctx,
                           const uint16_t *options,
                           size_t count) {
   if (ctx->cache_ignore_options) {
-    coap_free(ctx->cache_ignore_options);
+    coap_free_type(COAP_STRING, ctx->cache_ignore_options);
   }
   if (count) {
     assert(options);
-    ctx->cache_ignore_options = coap_malloc(count * sizeof(options[0]));
+    ctx->cache_ignore_options = coap_malloc_type(COAP_STRING, count * sizeof(options[0]));
     if (ctx->cache_ignore_options) {
       memcpy(ctx->cache_ignore_options, options, count * sizeof(options[0]));
       ctx->cache_ignore_count = count;
-    }
-    else {
-      coap_log(LOG_WARNING, "Unable to create cache_ignore_options\n");
+    } else {
+      coap_log_warn("Unable to create cache_ignore_options\n");
       return 0;
     }
-  }
-  else {
+  } else {
     ctx->cache_ignore_options = NULL;
     ctx->cache_ignore_count = count;
   }
@@ -92,7 +90,7 @@ coap_cache_derive_key_w_ignore(const coap_session_t *session,
 
   if (session_based == COAP_CACHE_IS_SESSION_BASED) {
     /* Include the session ptr */
-    if (!coap_digest_update(dctx, (const uint8_t*)&session, sizeof(session))) {
+    if (!coap_digest_update(dctx, (const uint8_t *)&session, sizeof(session))) {
       goto update_fail;
     }
   }
@@ -111,7 +109,7 @@ coap_cache_derive_key_w_ignore(const coap_session_t *session,
   }
 
   /* The body of a FETCH payload is part of the cache key,
-   * see https://tools.ietf.org/html/rfc8132#section-2 */
+   * see https://rfc-editor.org/rfc/rfc8132#section-2 */
   if (pdu->code == COAP_REQUEST_CODE_FETCH) {
     size_t len;
     const uint8_t *data;
@@ -152,9 +150,9 @@ coap_delete_cache_key(coap_cache_key_t *cache_key) {
 
 coap_cache_entry_t *
 coap_new_cache_entry(coap_session_t *session, const coap_pdu_t *pdu,
-               coap_cache_record_pdu_t record_pdu,
-               coap_cache_session_based_t session_based,
-               unsigned int idle_timeout) {
+                     coap_cache_record_pdu_t record_pdu,
+                     coap_cache_session_based_t session_based,
+                     unsigned int idle_timeout) {
   coap_cache_entry_t *entry = coap_malloc_type(COAP_CACHE_ENTRY,
                                                sizeof(coap_cache_entry_t));
   if (!entry) {
@@ -247,7 +245,7 @@ coap_delete_cache_entry(coap_context_t *ctx, coap_cache_entry_t *cache_entry) {
 
 const coap_pdu_t *
 coap_cache_get_pdu(const coap_cache_entry_t *cache_entry) {
-        return cache_entry->pdu;
+  return cache_entry->pdu;
 }
 
 void

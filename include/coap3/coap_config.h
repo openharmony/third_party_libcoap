@@ -4,20 +4,59 @@
 /* Define if building universal (internal helper macro) */
 /* #undef AC_APPLE_UNIVERSAL_BUILD */
 
-/* Define if libcoap supports client mode code */
+/* Define to build support for Unix socket packets. */
+#define COAP_AF_UNIX_SUPPORT 1
+
+/* Define to 1 to build with support for async separate responses. */
+/* #undef COAP_ASYNC_SUPPORT */
+
+/* Define to 1 if libcoap supports client mode code. */
 #define COAP_CLIENT_SUPPORT 1
 
-/* Define if the system has small stack size */
+/* Define to 1 if the system has small stack size. */
 /* #undef COAP_CONSTRAINED_STACK */
 
 /* Define to 1 to build without TCP support. */
 #define COAP_DISABLE_TCP 1
 
-/* Define if the system has epoll support */
+/* Define to 1 if the system has epoll support. */
 /* #undef COAP_EPOLL_SUPPORT */
 
-/* Define if libcoap supports server mode code */
+/* Define to build support for IPv4 packets. */
+#define COAP_IPV4_SUPPORT 1
+
+/* Define to build support for IPv6 packets. */
+#define COAP_IPV6_SUPPORT 1
+
+/* Define to level if max logging level is not 8 */
+/* #undef COAP_MAX_LOGGING_LEVEL */
+
+/* Define to 1 to build with OSCORE support. */
+/* #undef COAP_OSCORE_SUPPORT */
+
+/* Define to 1 to build with Q-Block support. */
+/* #undef COAP_Q_BLOCK_SUPPORT */
+
+/* Define to 1 if libcoap supports server mode code. */
 #define COAP_SERVER_SUPPORT 1
+
+/* Define to 1 if the system has libgnutls28. */
+/* #undef COAP_WITH_LIBGNUTLS */
+
+/* Define to 1 if the system has libmbedtls2.7.10. */
+/* #undef COAP_WITH_LIBMBEDTLS */
+
+/* Define to 1 if the system has libssl1.1. */
+/* #undef COAP_WITH_LIBOPENSSL */
+
+/* Define to 1 if the system has libtinydtls. */
+/* #undef COAP_WITH_LIBTINYDTLS */
+
+/* Define to 1 to build support for persisting observes. */
+/* #undef COAP_WITH_OBSERVE_PERSIST */
+
+/* Define to 1 to build with WebSockets support. */
+/* #undef COAP_WS_SUPPORT */
 
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #define HAVE_ARPA_INET_H 1
@@ -28,11 +67,20 @@
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #define HAVE_DLFCN_H 1
 
+/* Define to 1 if TinyDTLS has dtls_set_log_handler. */
+/* #undef HAVE_DTLS_SET_LOG_HANDLER */
+
+/* Define to 1 if you have the <errno.h> header file. */
+#define HAVE_ERRNO_H 1
+
 /* Define to 1 if you have the `getaddrinfo' function. */
 #define HAVE_GETADDRINFO 1
 
 /* Define to 1 if you have the `getrandom' function. */
-/* #undef HAVE_GETRANDOM 1 */
+#define HAVE_GETRANDOM 1
+
+/* Define to 1 if you have the <ifaddrs.h> header file. */
+#define HAVE_IFADDRS_H 1
 
 /* Define to 1 if you have the `if_nametoindex' function. */
 #define HAVE_IF_NAMETOINDEX 1
@@ -40,23 +88,14 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #define HAVE_INTTYPES_H 1
 
-/* Define if the system has libcunit */
+/* Define to 1 if the system has libcunit. */
 /* #undef HAVE_LIBCUNIT */
-
-/* Define if the system has libgnutls28 */
-/* #undef HAVE_LIBGNUTLS */
-
-/* Define if the system has libtinydtls */
-/* #undef HAVE_LIBTINYDTLS */
 
 /* Define to 1 if you have the <limits.h> header file. */
 #define HAVE_LIMITS_H 1
 
 /* Define to 1 if you have the `malloc' function. */
 #define HAVE_MALLOC 1
-
-/* Define if the system has libmbedtls2.7.10 */
-/* #undef HAVE_MBEDTLS */
 
 /* Define to 1 if you have the <memory.h> header file. */
 #define HAVE_MEMORY_H 1
@@ -73,14 +112,17 @@
 /* Define to 1 if you have the <net/if.h> header file. */
 #define HAVE_NET_IF_H 1
 
-/* Define if the system has libssl1.1 */
-/* #undef HAVE_OPENSSL 1 */
+/* Define to 1 if libcoap has no tls library support. */
+#define HAVE_NOTLS 1
 
 /* Define to 1 if you have the <pthread.h> header file. */
 #define HAVE_PTHREAD_H 1
 
 /* Define to 1 if you have the `pthread_mutex_lock' function. */
 #define HAVE_PTHREAD_MUTEX_LOCK 1
+
+/* Define to 1 if you have the `random' function. */
+#define HAVE_RANDOM 1
 
 /* Define to 1 if you have the `select' function. */
 #define HAVE_SELECT 1
@@ -110,10 +152,7 @@
 #define HAVE_STRRCHR 1
 
 /* Define to 1 if the system has the type `struct cmsghdr'. */
-// #define HAVE_STRUCT_CMSGHDR 1
-
-/* Define to 1 if you have the <syslog.h> header file. */
-#define HAVE_SYSLOG_H 1
+/* #undef HAVE_STRUCT_CMSGHDR */
 
 /* Define to 1 if you have the <sys/ioctl.h> header file. */
 #define HAVE_SYS_IOCTL_H 1
@@ -139,11 +178,17 @@
 /* Define to 1 if you have the <unistd.h> header file. */
 #define HAVE_UNISTD_H 1
 
+/* Define to 1 if you have the <winsock2.h> header file. */
+/* #undef HAVE_WINSOCK2_H */
+
+/* Define to 1 if you have the <ws2tcpip.h> header file. */
+/* #undef HAVE_WS2TCPIP_H */
+
 /* Define to the sub-directory where libtool stores uninstalled libraries. */
 #define LT_OBJDIR ".libs/"
 
 /* Define to 1 if assertions should be disabled. */
-#define NDEBUG 1
+/* #undef NDEBUG */
 
 /* Define to the address where bug reports for this package should be sent. */
 #define PACKAGE_BUGREPORT "libcoap-developers@lists.sourceforge.net"
@@ -152,7 +197,7 @@
 #define PACKAGE_NAME "libcoap"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "libcoap 4.3.1"
+#define PACKAGE_STRING "libcoap 4.3.4"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "libcoap"
@@ -161,13 +206,10 @@
 #define PACKAGE_URL "https://libcoap.net/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "4.3.1"
+#define PACKAGE_VERSION "4.3.4"
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
-
-/* Define to build without support for separate responses. */
-/* #undef WITHOUT_ASYNC */
 
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
    significant byte first (like Motorola and SPARC, unlike Intel). */

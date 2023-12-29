@@ -1,5 +1,5 @@
 // -*- mode:doc; -*-
-// vim: set syntax=asciidoc,tw=0:
+// vim: set syntax=asciidoc tw=0
 
 coap_encryption(3)
 ===================
@@ -37,8 +37,10 @@ DESCRIPTION
 This man page focuses on setting up CoAP to use encryption.
 
 When the libcoap library was built, it will have been compiled using a
-specific underlying TLS implementation type (e.g. OpenSSL, GnuTLS, Mbed TLS,
-TinyDTLS or noTLS).
+specific underlying TLS implementation type (e.g. https://www.openssl.org[OpenSSL],
+https://www.gnutls.org[GnuTLS],
+https://www.trustedfirmware.org/projects/mbed-tls/[Mbed TLS],
+https://github.com/eclipse/tinydtls[TinyDTLS] or noTLS).
 When the libcoap library is linked into an application, it is possible
 that the application needs to dynamically determine whether DTLS or TLS is
 supported, what type of TLS implementation libcoap was compiled with, as well
@@ -105,9 +107,9 @@ Multiple client sessions are supported per Context.
 Due to the nature of TLS, there are Callbacks that are invoked as the TLS
 session negotiates encryption algorithms, encryption keys etc.
 Where possible, the CoAP layer handles all this automatically based on
-different configuration options passed in by the coap_context_set_pki(),
-coap_new_client_session_pki(), coap_context_set_psk2() and
-coap_new_client_session_psk2() functions.
+different configuration options passed in by the *coap_context_set_pki*(),
+*coap_new_client_session_pki*(), *coap_context_set_psk2*() and
+*coap_new_client_session_psk2*() functions.
 
 PSK CLIENT INFORMATION
 ----------------------
@@ -216,7 +218,7 @@ trying to contact.  The server is then able to decide, based on the name in the
 SNI extension, whether, for example, a different Hint and/or Pre-Shared Key is
 to be used.
 
-Note: Not supported by TinyDTLS.
+*NOTE:* Not supported by TinyDTLS.
 
 *SECTION: PSK Client: coap_dtls_cpsk_t: PSK Client Definitions*
 [source, c]
@@ -369,7 +371,7 @@ Pre-Shared Key to use for this SNI, or NULL if the connection is to get
 rejected.  Libcoap remembers the association between a specific SNI and Hint +
 Pre-Shared Key set and will only invoke this callback if the SNI is unknown.
 
-Note: Not supported by TinyDTLS.
+*NOTE:* Not supported by TinyDTLS.
 
 *sni_call_back_arg* points to a user defined set of data that will get passed
 in to the validate_sni_call_back() function and can be used by that function.
@@ -737,7 +739,7 @@ will be in PEM format.  This data cannot be password protected. If RPK and
 
 *key.pem_buf.private_key* is the length of the private key.
 
-* Note:*  The PEM buffer Certs and Key should be be NULL terminated strings for
+*NOTE:* The PEM buffer Certs and Key should be be NULL terminated strings for
 performance reasons (to save a potential buffer copy) and the length include
 this NULL terminator. It is not a requirement to have the NULL terminator
 though and the length must then reflect the actual data size.
@@ -1157,7 +1159,7 @@ verify_ih_callback(coap_str_const_t *hint,
   /* Remove (void) definition if variable is used */
   (void)c_session;
 
-  coap_log(LOG_INFO, "Identity Hint '%.*s' provided\n", (int)hint->length, hint->s);
+  coap_log_info("Identity Hint '%.*s' provided\n", (int)hint->length, hint->s);
 
   /* Just use the defined information for now as passed in by arg */
   return psk_info;
@@ -1223,8 +1225,11 @@ SEE ALSO
 
 FURTHER INFORMATION
 -------------------
-See "RFC7252: The Constrained Application Protocol (CoAP)" for further
-information.
+See
+
+"https://rfc-editor.org/rfc/rfc7252[RFC7252: The Constrained Application Protocol (CoAP)]"
+
+for further information.
 
 BUGS
 ----

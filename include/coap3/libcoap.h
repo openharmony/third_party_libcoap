@@ -17,23 +17,31 @@
 #ifndef COAP_LIBCOAP_H_
 #define COAP_LIBCOAP_H_
 
-/* The non posix embedded platforms like Contiki, TinyOS, RIOT, ... doesn't have
+/* The non posix embedded platforms like Contiki-NG, TinyOS, RIOT, ... don't have
  * a POSIX compatible header structure so we have to slightly do some platform
- * related things. Currently there is only Contiki available so we check for a
+ * related things. Currently there is only Contiki-NG available so we check for a
  * CONTIKI environment and do *not* include the POSIX related network stuff. If
  * there are other platforms in future there need to be analogous environments.
  *
- * The CONTIKI variable is within the Contiki build environment! */
+ * The CONTIKI variable is within the Contiki-NG build environment! */
 
 #if defined(_WIN32)
-#pragma comment(lib,"Ws2_32.lib")
 #include <ws2tcpip.h>
+#if !defined(__MINGW32__)
+#pragma comment(lib,"Ws2_32.lib")
+#ifndef _SSIZE_T_DECLARED
 typedef SSIZE_T ssize_t;
+#define        _SSIZE_T_DECLARED
+#endif
+#ifndef _IN_PORT_T_DECLARED
 typedef USHORT in_port_t;
-#elif !defined (CONTIKI)
+#define        _IN_PORT_T_DECLARED
+#endif
+#endif /* !defined(__MINGW32__) */
+#elif !defined (CONTIKI) && !defined (WITH_LWIP)
 #include <netinet/in.h>
 #include <sys/socket.h>
-#endif /* CONTIKI */
+#endif /* ! CONTIKI && ! WITH_LWIP */
 
 #ifndef COAP_STATIC_INLINE
 #  if defined(__cplusplus)

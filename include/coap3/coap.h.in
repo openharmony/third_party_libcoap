@@ -1,13 +1,18 @@
 /*
  * coap.h -- main header file for CoAP stack of libcoap
  *
- * Copyright (C) 2010-2012,2015-2022 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2012,2015-2023 Olaf Bergmann <bergmann@tzi.org>
  *               2015 Carsten Schoenert <c.schoenert@t-online.de>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
  * This file is part of the CoAP library libcoap. Please see README for terms
  * of use.
+ */
+
+/**
+ * @file coap.h
+ * @brief Primary include file
  */
 
 #ifndef COAP_H_
@@ -38,25 +43,27 @@ extern "C" {
 #include "coap@LIBCOAP_API_VERSION@/libcoap.h"
 
 #include "coap@LIBCOAP_API_VERSION@/coap_forward_decls.h"
-#include "coap@LIBCOAP_API_VERSION@/block.h"
 #include "coap@LIBCOAP_API_VERSION@/coap_address.h"
 #include "coap@LIBCOAP_API_VERSION@/coap_async.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_block.h"
 #include "coap@LIBCOAP_API_VERSION@/coap_cache.h"
 #include "coap@LIBCOAP_API_VERSION@/coap_debug.h"
 #include "coap@LIBCOAP_API_VERSION@/coap_dtls.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_encode.h"
 #include "coap@LIBCOAP_API_VERSION@/coap_event.h"
 #include "coap@LIBCOAP_API_VERSION@/coap_io.h"
-#include "coap@LIBCOAP_API_VERSION@/coap_prng.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_mem.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_net.h"
 #include "coap@LIBCOAP_API_VERSION@/coap_option.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_oscore.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_pdu.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_prng.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_resource.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_str.h"
 #include "coap@LIBCOAP_API_VERSION@/coap_subscribe.h"
 #include "coap@LIBCOAP_API_VERSION@/coap_time.h"
-#include "coap@LIBCOAP_API_VERSION@/encode.h"
-#include "coap@LIBCOAP_API_VERSION@/mem.h"
-#include "coap@LIBCOAP_API_VERSION@/net.h"
-#include "coap@LIBCOAP_API_VERSION@/pdu.h"
-#include "coap@LIBCOAP_API_VERSION@/resource.h"
-#include "coap@LIBCOAP_API_VERSION@/str.h"
-#include "coap@LIBCOAP_API_VERSION@/uri.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_uri.h"
+#include "coap@LIBCOAP_API_VERSION@/coap_ws.h"
 
 #ifdef __cplusplus
 }

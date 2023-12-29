@@ -2,7 +2,7 @@
  * coap_forward_decls.h -- Forward declarations of structures that are
  * opaque to application programming that use libcoap.
  *
- * Copyright (C) 2019-2022 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2019-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -28,6 +28,8 @@ struct coap_bin_const_t;
 struct coap_dtls_pki_t;
 struct coap_str_const_t;
 struct coap_string_t;
+
+typedef struct coap_address_t coap_address_t;
 
 /*
  * typedef all the opaque structures that are defined in coap_*_internal.h
@@ -72,6 +74,13 @@ typedef struct coap_socket_t coap_socket_t;
  */
 typedef struct coap_context_t coap_context_t;
 typedef struct coap_queue_t coap_queue_t;
+
+/* ************* coap_oscore_internal.h ***************** */
+
+/*
+ * OSCORE information.
+ */
+typedef struct coap_oscore_conf_t coap_oscore_conf_t;
 
 /* ************* coap_pdu_internal.h ***************** */
 

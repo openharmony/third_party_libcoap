@@ -1,5 +1,5 @@
 // -*- mode:doc; -*-
-// vim: set syntax=asciidoc,tw=0:
+// vim: set syntax=asciidoc tw=0
 
 coap-client(5)
 ==============
@@ -22,11 +22,12 @@ SYNOPSIS
 *coap-client* [*-a* addr] [*-b* [num,]size] [*-e* text] [*-f* file] [*-l* loss]
               [*-m* method] [*-o* file] [*-p* port] [*-r*] [*-s duration*]
               [*-t* type] [*-v* num] [*-w*] [*-A* type] [*-B* seconds]
-              [*-G* count] [*-H* hoplimit] [*-K* interval] [*-L* value] [*-N*]
-              [*-O* num,text] [*-P* scheme://addr[:port]] [*-T* token] [*-U*]
+              [*-E* oscore_conf_file[,seq_file]] [*-G* count] [*-H* hoplimit]
+              [*-K* interval] [*-L* value] [*-N*] [*-O* num,text]
+              [*-P* scheme://addr[:port]] [*-T* token] [*-U*] [*-V* num]
               [*-X* size]
               [[*-h* match_hint_file] [*-k* key] [*-u* user]]
-              [[*-c* certfile] [*-j* keyfile] [-n] [*-C* cafile]
+              [[*-c* certfile] [*-j* keyfile] [*-n*] [*-C* cafile]
               [*-J* pkcs11_pin] [*-M* rpk_file] [*-R* trust_casfile]] URI
 
 For *coap-client* versions that use libcoap compiled for different
@@ -39,15 +40,19 @@ DESCRIPTION
 *coap-client* is a CoAP client to communicate with 6LoWPAN devices via
 the protocol CoAP (RFC 7252) using the URI given as argument on the
 command line. The URI must have the scheme 'coap', 'coap+tcp', 'coaps' or
-'coaps+tcp'. 'coaps' and 'coaps+tcp' are only supported when coap-client is
-built with support for secure (D)TLS communication.
+'coaps+tcp'.
+
+'coaps' and 'coaps+tcp' are only supported when
+coap-client is built with support for secure (D)TLS communication.
 
 If 'coaps' or 'coaps+tcp' is being used, provided the CoAP server supports PKI
 and is configured with a certificate and private key, the coap-client does not
 need to have a Pre-Shared Key (-k) or certificate (-c) configured.
 
-The URI's host part may be a DNS name or a literal IP address. Note that, for
-IPv6 address references, angle brackets are required (c.f. EXAMPLES).
+The URI's host part may be a DNS name, a literal IP address or a Unix domain
+name. For Unix domain names, %2F is used as the / separator to differentiate
+between the host and patch definitions. For IPv6 address references, angle
+brackets are required (c.f. EXAMPLES) to delimit the host portion of the URI.
 
 OPTIONS - General
 -----------------
@@ -88,7 +93,7 @@ OPTIONS - General
    A filename to store data retrieved with GET.
 
 *-p* port::
-   The port to listen on.
+   The port to send from.
 
 *-r*::
    Use reliable protocol (TCP or TLS).
@@ -113,8 +118,8 @@ OPTIONS - General
      application/cbor (cbor)
 
 *-v* num::
-   The verbosity level to use (default 3, maximum is 9). Above 7, there is
-   increased verbosity in GnuTLS and OpenSSL logging.
+   The verbosity level to use (default 4, maximum is 8) for general
+   CoAP logging.
 
 *-w*::
    Append a newline to received data.
@@ -126,6 +131,13 @@ OPTIONS - General
 
 *-B* seconds::
    Break operation after waiting given seconds (default is 90).
+
+*-E* oscore_conf_file[,seq_file]::
+   'oscore_conf_file' contains OSCORE configuration. See *coap-oscore-conf*(5)
+   for definitions. Optional 'seq_file' (which is created if needed) is used to
+   save the current transmit sequence number, so on client restart sequence
+   numbers continue to increase and are not reset to prevent anti-replay
+   mechanisms being triggered.
 
 *-G* count ::
    Repeat the Request 'count' times with a second delay between each one.
@@ -143,8 +155,11 @@ OPTIONS - General
    Sum of one or more COAP_BLOCK_* flag values for different block handling
    methods. Default is 1 (COAP_BLOCK_USE_LIBCOAP).
 
-     COAP_BLOCK_USE_LIBCOAP  1
-     COAP_BLOCK_SINGLE_BODY  2
+     COAP_BLOCK_USE_LIBCOAP         1
+     COAP_BLOCK_SINGLE_BODY         2
+     COAP_BLOCK_TRY_Q_BLOCK         4
+     COAP_BLOCK_USE_M_Q_BLOCK       8
+     COAP_BLOCK_NO_PREEMPTIVE_RTAG 16
 
 *-N* ::
    Send NON-confirmable message. If option *-N* is not specified, a
@@ -161,10 +176,14 @@ OPTIONS - General
    Scheme is one of coap, coaps, coap+tcp and coaps+tcp.
 
 *-T* token::
-   Define the initial starting 'token' for the request.
+   Define the initial starting 'token' for the request (up to 24 characters).
 
 *-U* ::
    Never include Uri-Host or Uri-Port options.
+
+*-V* num::
+   The verbosity level to use (default 3, maximum is 7) for (D)TLS
+   library logging.
 
 *-X* size::
    Maximum message size to use for TCP based connections (default is 8388864).
@@ -240,16 +259,26 @@ EXAMPLES
 --------
 * Example
 ----
-coap-client coap://coap.me
+coap-client coap://libcoap.net
 ----
-Query the resource '/' from server 'coap.me' (using the GET method).
+Query the resource '/' from server 'libcoap.net' (using the GET method).
 
 * Example
 ----
 coap-client -m get coap://[::1]/
 ----
 Query the resource '/' on localhost using the 'GET' method to get back the
-summary defined attributes.
+summary information.
+
+* Example
+----
+coap-client -m get coap://%2Fsome%2Funix%2Fdomain%2Fpath/time
+----
+Query the resource '/time' on server listening on datagram Unix domain
+'/some/unix/domain/path' using the 'GET' method to get back the
+current time. The %2F is the hex encoding for / and indicates
+which is the 'host' definition separator and the simple / is for the path
+definition separator.
 
 * Example
 ----
@@ -287,6 +316,11 @@ EXIT STATUS
 *1*::
    Failure (syntax or usage error; configuration error; document
    processing failure; unexpected error)
+
+SEE ALSO
+--------
+
+*coap-server*(5) and *coap-oscore-conf*(5)
 
 BUGS
 -----
