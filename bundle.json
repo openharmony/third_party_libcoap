@@ -2,7 +2,7 @@
     "name": "@ohos/libcoap",
     "description": "libcoap is a C implementation of a lightweight application-protocol for devices that are constrained their resources such as computing power, RF range, memory, bandwidth, or network packet sizes.",
     "version": "4.3.4",
-    "license": "Apache License V2.0, OpenSSL License, BSD 3-Clause License, GPL V1.0, BSD 2-Clause License, GPL V2.0, GPL V3.0, BSD-1-Clause License",
+    "license": "BSD 2-Clause License",
     "publishAs": "code-segment",
     "segment": {
         "destPath": "third_party/libcoap"
