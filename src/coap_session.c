@@ -38,8 +38,6 @@
 #ifdef COAP_SUPPORT_SOCKET_BROADCAST
 #ifndef _WIN32
 
-#define COAP_INTERFACE_MAX 16
-
 static int32_t loopback_packet_check(const char *src_buf) {
   const char addr_perface[] = "::ffff:";
   char tmp_buf[INET6_ADDRSTRLEN] = {0};

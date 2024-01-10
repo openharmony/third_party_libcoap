@@ -74,6 +74,60 @@
 #endif /* IPV6_RECVPKTINFO */
 #endif /* !(WITH_CONTIKI || RIOT_VERSION) */
 
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+#include <coap3/coap_address.h>
+#ifndef _WIN32
+#include <arpa/inet.h>
+#include <net/if.h>
+
+static int
+bind_to_device(int sockfd, const struct sockaddr_in *local_addr) {
+  struct ifreq buf[COAP_INTERFACE_MAX];
+  struct ifconf ifc;
+  (void)memset_s(buf, COAP_INTERFACE_MAX * sizeof(struct ifreq), 0x00, COAP_INTERFACE_MAX * sizeof(struct ifreq));
+  (void)memset_s(&ifc, sizeof(struct ifconf), 0x00, sizeof(struct ifconf));
+  ifc.ifc_len = sizeof(buf);
+  ifc.ifc_buf = (char *)buf;
+
+  if(ioctl(sockfd, SIOCGIFCONF, (char *)&ifc) < 0) {
+    coap_log_err("bind_to_device: ioctl SIOCGIFCONF fail, err: %s\n", coap_socket_strerror());
+    return -1;
+  }
+  int interface_num = ifc.ifc_len / sizeof(struct ifreq);
+  for (int i = 0; i < interface_num && i < COAP_INTERFACE_MAX; i++) {
+    coap_log_debug("bind_to_device: nic name: %s\n", buf[i].ifr_name);
+    if (ioctl(sockfd, SIOCGIFFLAGS, (char *)(&buf[i])) < 0) {
+      coap_log_err("bind_to_device: ioctl SIOCGIFFLAGS fail, err: %s\n", coap_socket_strerror());
+      return -1;
+    }
+    if (!((uint16_t)buf[i].ifr_flags & IFF_UP)) {
+      coap_log_warn("bind_to_device: nic is not up\n");
+      continue;
+    }
+    if (ioctl(sockfd, SIOCGIFADDR, (char *)&buf[i]) < 0) {
+      coap_log_err("bind_to_device: ioctl SIOCGIFADDR fail, err: %s\n", coap_socket_strerror());
+      return -1;
+    }
+    /* find the target nic by ip, begin to bind */
+    if (local_addr->sin_addr.s_addr == ((struct sockaddr_in *)&(buf[i].ifr_addr))->sin_addr.s_addr) {
+      struct ifreq ifr;
+      (void)memset_s(&ifr, sizeof(ifr), 0, sizeof(ifr));
+      (void)strcpy_s(ifr.ifr_ifrn.ifrn_name, sizeof(ifr.ifr_ifrn.ifrn_name),
+        buf[i].ifr_name);
+      if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, (char *)&ifr, sizeof(ifr)) < 0) {
+        coap_log_err("bind_to_device: setsockopt SO_BINDTODEVICE fail, err: %s\n", coap_socket_strerror());
+        return -1;
+      }
+      coap_log_debug("bind_to_device: bind nic %s success\n", buf[i].ifr_name);
+      break;
+    }
+  }
+  return 0;
+}
+
+#endif /* _WIN32 */
+#endif /* COAP_SUPPORT_SOCKET_BROADCAST */
+
 #if COAP_SERVER_SUPPORT
 coap_endpoint_t *
 coap_malloc_endpoint(void) {
@@ -221,9 +275,15 @@ coap_socket_connect_udp(coap_socket_t *sock,
 #if !defined(RIOT_VERSION)
   int is_mcast = coap_is_mcast(server);
 #endif /* !defined(RIOT_VERSION) */
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+  int is_bcast = coap_is_bcast(server);
+#endif
   coap_address_copy(&connect_addr, server);
 
   sock->flags &= ~(COAP_SOCKET_CONNECTED | COAP_SOCKET_MULTICAST);
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+  sock->flags &= ~(COAP_SOCKET_BROADCAST);
+#endif
   sock->fd = socket(connect_addr.addr.sa.sa_family, SOCK_DGRAM, 0);
 
   if (sock->fd == COAP_INVALID_SOCKET) {
@@ -231,6 +291,13 @@ coap_socket_connect_udp(coap_socket_t *sock,
                   coap_socket_strerror());
     goto error;
   }
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+  if (setsockopt(sock->fd, SOL_SOCKET, SO_BROADCAST, &on, sizeof(int)) < 0) {
+    coap_log_warn("coap_socket_connect_udp: setsockopt SO_BROADCAST fail, err: %s\n",
+                  coap_socket_strerror());
+    goto error;
+  }
+#endif
 
 #ifndef RIOT_VERSION
 #ifdef _WIN32
@@ -295,6 +362,13 @@ coap_socket_connect_udp(coap_socket_t *sock,
                     coap_socket_strerror());
       goto error;
     }
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+#ifndef _WIN32
+  int ret = bind_to_device(sock->fd, (struct sockaddr_in *)(&local_if->addr.sa));
+  if (ret == -1)
+    goto error;
+#endif
+#endif
 #if COAP_AF_UNIX_SUPPORT
   } else if (connect_addr.addr.sa.sa_family == AF_UNIX) {
     /* Need to bind to a local address for clarity over endpoints */
@@ -337,6 +411,17 @@ coap_socket_connect_udp(coap_socket_t *sock,
                     coap_socket_strerror());
     return 1;
   }
+
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+  if (is_bcast) {
+    if (getsockname(sock->fd, &local_addr->addr.sa, &local_addr->size) == COAP_SOCKET_ERROR) {
+      coap_log_warn("coap_socket_connect_udp: getsockname for broadcast socket: %s\n",
+                    coap_socket_strerror());
+    }
+    sock->flags |= COAP_SOCKET_BROADCAST;
+    return 1;
+  }
+#endif
 #else /* defined(RIOT_VERSION) */
   if (!(local_if && local_if->addr.sa.sa_family)) {
     /* Bind to a (unused) port to simplify logging */

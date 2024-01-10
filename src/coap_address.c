@@ -154,6 +154,22 @@ coap_is_mcast(const coap_address_t *a) {
 #define COAP_BCST_REFRESH_SECS 30
 #endif /* COAP_BCST_REFRESH_SECS */
 
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+int coap_is_bcast(const coap_address_t *a) {
+  if (a == NULL)
+    return 0;
+  switch(a->addr.sa.sa_family) {
+    case AF_INET:
+      if (a->addr.sin.sin_addr.s_addr == 0xFFFFFFFF)
+        return 1;
+      else
+        return 0;
+    case AF_INET6: /* broadcast not support ipv6 now */
+    default:
+      return 0;
+  }
+}
+#else /* !COAP_SUPPORT_SOCKET_BROADCAST */
 #if COAP_IPV4_SUPPORT && defined(HAVE_IFADDRS_H)
 static int bcst_cnt = -1;
 static coap_tick_t last_refresh;
@@ -236,7 +252,7 @@ coap_is_bcast(const coap_address_t *a) {
   return 0;
 #endif /* COAP_IPV4_SUPPORT */
 }
-
+#endif /* COAP_SUPPORT_SOCKET_BROADCAST */
 #endif /* !defined(WITH_CONTIKI) && !defined(WITH_LWIP) */
 
 void
