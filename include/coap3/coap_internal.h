@@ -80,6 +80,10 @@
 #endif /* COAP_ASYNC_SUPPORT */
 #endif /* ! COAP_SERVER_SUPPORT */
 
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+#define COAP_INTERFACE_MAX 16
+#endif
+
 #include "coap3/coap.h"
 
 /*

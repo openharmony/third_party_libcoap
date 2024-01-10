@@ -1798,7 +1798,11 @@ coap_read_session(coap_context_t *ctx, coap_session_t *session, coap_tick_t now)
   coap_mutex_lock(&m_read_session);
 #endif /* COAP_CONSTRAINED_STACK */
 
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+  assert(session->sock.flags & (COAP_SOCKET_CONNECTED | COAP_SOCKET_MULTICAST | COAP_SOCKET_BROADCAST));
+#else
   assert(session->sock.flags & (COAP_SOCKET_CONNECTED | COAP_SOCKET_MULTICAST));
+#endif
 
   packet->length = sizeof(payload);
   packet->payload = payload;
