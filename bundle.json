@@ -1,6 +1,6 @@
 {
     "name": "@ohos/libcoap",
-    "description": "libcoap is a C implementation of a lightweight application-protocol for devices that are constrained their resources such as computing power, RF range, memory, bandwidth, or network packet sizes.",
+    "description": "libcoap is a C implementation of a lightweight application-protocol.",
     "version": "4.3.4",
     "license": "BSD 2-Clause License",
     "publishAs": "code-segment",
@@ -16,14 +16,20 @@
         "features": [],
         "adapted_system_type": [ "mini", "small", "standard" ],
         "deps": {
-            "components": [],
-            "third_party": [
-                "bounds_checking_function"
-            ]
+            "components": [ "bounds_checking_function" ],
+            "third_party": []
         },
         "build": {
-            "sub_component": [],
-            "inner_kits": [],
+            "sub_component": [ "//third_party/libcoap:libcoap" ],
+            "inner_kits": [
+                {
+                    "header": {
+                        "header_base": "//third_party/libcoap/include",
+                        "header_files": []
+                    },
+                    "name": "//third_party/libcoap:libcoap"
+                }
+            ],
             "test": []
         }
     }
