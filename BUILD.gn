@@ -52,38 +52,32 @@ source_set("libcoap_src") {
   configs += [ ":libcoap_config" ]
 }
 
-deps_with_static = [
-  ":libcoap_src",
-  "//third_party/bounds_checking_function:libsec_static",
-]
-
-deps_with_shared = [
-  ":libcoap_src",
-  "//third_party/bounds_checking_function:libsec_shared",
-]
-
 if (defined(ohos_lite)) {
   import("//build/lite/config/component/lite_component.gni")
 
   static_library("libcoap_static") {
-    deps = deps_with_static
+    deps = [ ":libcoap_src" ]
+    external_deps = [ "bounds_checking_function:libsec_static" ]
     public_configs = [ ":libcoap_config" ]
   }
 
   shared_library("libcoap") {
-    deps = deps_with_shared
+    deps = [ ":libcoap_src" ]
+    external_deps = [ "bounds_checking_function:libsec_shared" ]
     public_configs = [ ":libcoap_config" ]
   }
 } else {
   import("//build/ohos.gni")
 
   ohos_static_library("libcoap_static") {
-    deps = deps_with_static
+    deps = [ ":libcoap_src" ]
+    external_deps = [ "bounds_checking_function:libsec_static" ]
     public_configs = [ ":libcoap_config" ]
   }
 
   ohos_shared_library("libcoap") {
-    deps = deps_with_shared
+    deps = [ ":libcoap_src" ]
+    external_deps = [ "bounds_checking_function:libsec_shared" ]
     public_configs = [ ":libcoap_config" ]
     subsystem_name = "thirdparty"
     innerapi_tags = [ "platformsdk_indirect" ]
