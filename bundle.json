@@ -20,13 +20,9 @@
             "third_party": []
         },
         "build": {
-            "sub_component": [ "//third_party/libcoap:libcoap" ],
+            "sub_component": [],
             "inner_kits": [
                 {
-                    "header": {
-                        "header_base": "//third_party/libcoap/include",
-                        "header_files": []
-                    },
                     "name": "//third_party/libcoap:libcoap"
                 }
             ],

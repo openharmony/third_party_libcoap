@@ -8,10 +8,7 @@ cflags = [
 cflags_cc = cflags
 
 config("libcoap_config") {
-  include_dirs = [
-    "include",
-    "//third_party/bounds_checking_function/include",
-  ]
+  include_dirs = [ "include" ]
   if (defined(ohos_lite)) {
     defines = [ "_GNU_SOURCE" ]
   }
@@ -47,38 +44,33 @@ src = [
   "src/coap_ws.c",
 ]
 
-source_set("libcoap_src") {
-  sources = src
-  configs += [ ":libcoap_config" ]
-}
-
 if (defined(ohos_lite)) {
   import("//build/lite/config/component/lite_component.gni")
 
   static_library("libcoap_static") {
-    deps = [ ":libcoap_src" ]
-    external_deps = [ "bounds_checking_function:libsec_static" ]
+    sources = src
     public_configs = [ ":libcoap_config" ]
+    public_external_deps = [ "bounds_checking_function:libsec_static" ]
   }
 
   shared_library("libcoap") {
-    deps = [ ":libcoap_src" ]
-    external_deps = [ "bounds_checking_function:libsec_shared" ]
+    sources = src
     public_configs = [ ":libcoap_config" ]
+    public_external_deps = [ "bounds_checking_function:libsec_shared" ]
   }
 } else {
   import("//build/ohos.gni")
 
   ohos_static_library("libcoap_static") {
-    deps = [ ":libcoap_src" ]
-    external_deps = [ "bounds_checking_function:libsec_static" ]
+    sources = src
     public_configs = [ ":libcoap_config" ]
+    public_external_deps = [ "bounds_checking_function:libsec_static" ]
   }
 
   ohos_shared_library("libcoap") {
-    deps = [ ":libcoap_src" ]
-    external_deps = [ "bounds_checking_function:libsec_shared" ]
+    sources = src
     public_configs = [ ":libcoap_config" ]
+    public_external_deps = [ "bounds_checking_function:libsec_shared" ]
     subsystem_name = "thirdparty"
     innerapi_tags = [ "platformsdk_indirect" ]
     if (!defined(oem_commercial_build) || !oem_commercial_build) {
