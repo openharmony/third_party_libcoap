@@ -3761,7 +3761,9 @@ coap_dispatch(coap_context_t *context, coap_session_t *session,
 
   case COAP_MESSAGE_NON:
     /* find transaction in sendqueue in case large response */
+#ifndef COAP_SUPPORT_SOCKET_BROADCAST
     coap_remove_from_queue(&context->sendqueue, session, pdu->mid, &sent);
+#endif
     /* check for unknown critical options */
     if (coap_option_check_critical(session, pdu, &opt_filter) == 0) {
       packet_is_bad = 1;
