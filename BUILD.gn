@@ -68,6 +68,7 @@ if (defined(ohos_lite)) {
   }
 
   ohos_shared_library("libcoap") {
+    branch_protector_ret = "pac_ret"
     sources = src
     public_configs = [ ":libcoap_config" ]
     public_external_deps = [ "bounds_checking_function:libsec_shared" ]
