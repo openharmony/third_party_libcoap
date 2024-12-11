@@ -2,7 +2,7 @@
     "name": "@ohos/libcoap",
     "description": "libcoap is a C implementation of a lightweight application-protocol.",
     "version": "4.3.4",
-    "license": "Apache-2.0",
+    "license": "BSD-2-Clause",
     "publishAs": "code-segment",
     "segment": {
         "destPath": "third_party/libcoap"
