@@ -79,9 +79,52 @@
 #ifndef _WIN32
 #include <arpa/inet.h>
 #include <net/if.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#include <netinet/if_ether.h>
+
+static int bind_to_ipv6_device(int sockfd, const coap_address_t *local_addr)
+{
+  struct ifaddrs *ifaddr, *ifa;
+  struct sockaddr_in6 *ifa_addr = NULL;
+  char *ifa_name = NULL;
+
+  if (getifaddrs(&ifaddr) == -1) {
+    coap_log_err("getifaddrs err: %s\n", coap_socket_strerror());
+    return -1;
+  }
+
+  for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+    if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != AF_INET6) {
+      continue;
+    }
+
+    ifa_addr = (struct sockaddr_in6 *)(ifa->ifa_addr);
+    if (memcmp(&(local_addr->addr.sin6.sin6_addr), &(ifa_addr->sin6_addr), sizeof(struct in6_addr)) == 0) {
+      ifa_name = ifa->ifa_name;
+      break;
+    }
+  }
+
+  if (ifa_name == NULL || ifa_addr == NULL) {
+    coap_log_err("getifaddrs ifname failed\n");
+    freeifaddrs(ifaddr);
+    return -1;
+  }
+  coap_log_debug("will bind_to_ipv6_device: bind nic %s\n", ifa_name);
+  ifa_addr->sin6_scope_id = if_nametoindex(ifa_name);
+  ifa_addr->sin6_port = local_addr->addr.sin6.sin6_port;
+  int ret = bind(sockfd, (struct sockaddr *)ifa_addr, (socklen_t)sizeof(struct sockaddr_in6));
+  if (ret == 0 && setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, ifa_name, strlen(ifa_name) + 1) < 0) {
+    coap_log_warn("ignore bind_to_ipv6_device set sockopt SO_BINGTODEVICE fail, err %s\n", coap_socket_strerror());
+    // cur no return error
+  }
+  freeifaddrs(ifaddr);
+  return ret;
+}
 
 static int
-bind_to_device(int sockfd, const struct sockaddr_in *local_addr) {
+bind_to_device(int sockfd,  const coap_address_t *local_addr) {
   struct ifreq buf[COAP_INTERFACE_MAX];
   struct ifconf ifc;
   (void)memset_s(buf, COAP_INTERFACE_MAX * sizeof(struct ifreq), 0x00, COAP_INTERFACE_MAX * sizeof(struct ifreq));
@@ -89,6 +132,19 @@ bind_to_device(int sockfd, const struct sockaddr_in *local_addr) {
   ifc.ifc_len = sizeof(buf);
   ifc.ifc_buf = (char *)buf;
 
+  if (local_addr->addr.sa.sa_family == AF_INET6) {
+    return bind_to_ipv6_device(sockfd, local_addr);
+  }
+
+  if (local_addr->addr.sa.sa_family != AF_INET) {
+    coap_log_err("bind_to_device sa_family %d not supported\n", local_addr->addr.sa.sa_family);
+    return -1;
+  }
+
+  if (bind(sockfd, &local_addr->addr.sa, (socklen_t)sizeof(struct sockaddr_in)) == COAP_SOCKET_ERROR) {
+    coap_log_warn("coap_socket_connect_udp: bind: %s\n", coap_socket_strerror());
+    return -1;
+  }
   if(ioctl(sockfd, SIOCGIFCONF, (char *)&ifc) < 0) {
     coap_log_err("bind_to_device: ioctl SIOCGIFCONF fail, err: %s\n", coap_socket_strerror());
     return -1;
@@ -109,7 +165,7 @@ bind_to_device(int sockfd, const struct sockaddr_in *local_addr) {
       return -1;
     }
     /* find the target nic by ip, begin to bind */
-    if (local_addr->sin_addr.s_addr == ((struct sockaddr_in *)&(buf[i].ifr_addr))->sin_addr.s_addr) {
+    if (local_addr->addr.sin.sin_addr.s_addr == ((struct sockaddr_in *)&(buf[i].ifr_addr))->sin_addr.s_addr) {
       struct ifreq ifr;
       (void)memset_s(&ifr, sizeof(ifr), 0, sizeof(ifr));
       (void)strcpy_s(ifr.ifr_ifrn.ifrn_name, sizeof(ifr.ifr_ifrn.ifrn_name),
@@ -292,11 +348,22 @@ coap_socket_connect_udp(coap_socket_t *sock,
     goto error;
   }
 #ifdef COAP_SUPPORT_SOCKET_BROADCAST
-  if (setsockopt(sock->fd, SOL_SOCKET, SO_BROADCAST, &on, sizeof(int)) < 0) {
+#ifdef COAP_IPV4_SUPPORT
+  if (connect_addr.addr.sa.sa_family == AF_INET &&
+    setsockopt(sock->fd, SOL_SOCKET, SO_BROADCAST, &on, sizeof(int)) < 0) {
     coap_log_warn("coap_socket_connect_udp: setsockopt SO_BROADCAST fail, err: %s\n",
                   coap_socket_strerror());
     goto error;
   }
+#endif
+#ifdef COAP_IPV6_SUPPORT
+  if (connect_addr.addr.sa.sa_family == AF_INET6 &&
+    setsockopt(sock->fd, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &off, sizeof(int)) < 0) {
+    coap_log_warn("coap_socket_connect_udp: setsockopt IPV6_MULTICAST_LOOP fail, err: %s\n",
+                  coap_socket_strerror());
+    goto error;
+  }
+#endif
 #endif
 
 #ifndef RIOT_VERSION
@@ -352,6 +419,7 @@ coap_socket_connect_udp(coap_socket_t *sock,
       coap_log_warn("coap_socket_connect_udp: setsockopt SO_REUSEADDR: %s\n",
                     coap_socket_strerror());
 #endif /* RIOT_VERSION */
+#ifndef COAP_SUPPORT_SOCKET_BROADCAST /* not COAP_SUPPORT_SOCKET_BROADCAST */
     if (bind(sock->fd, &local_if->addr.sa,
 #if COAP_IPV4_SUPPORT
              local_if->addr.sa.sa_family == AF_INET ?
@@ -362,13 +430,15 @@ coap_socket_connect_udp(coap_socket_t *sock,
                     coap_socket_strerror());
       goto error;
     }
-#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+#else /* COAP_SUPPORT_SOCKET_BROADCAST */
 #ifndef _WIN32
-  int ret = bind_to_device(sock->fd, (struct sockaddr_in *)(&local_if->addr.sa));
-  if (ret == -1)
+  int ret = bind_to_device(sock->fd, local_if);
+  if (ret == -1) {
+    coap_log_warn("coap_socket_connect_udp: bind_to_device failed\n");
     goto error;
+  }
 #endif
-#endif
+#endif /* COAP_SUPPORT_SOCKET_BROADCAST */
 #if COAP_AF_UNIX_SUPPORT
   } else if (connect_addr.addr.sa.sa_family == AF_UNIX) {
     /* Need to bind to a local address for clarity over endpoints */
@@ -971,7 +1041,11 @@ coap_socket_send(coap_socket_t *sock, const coap_session_t *session,
 
           pktinfo = (struct in6_pktinfo *)CMSG_DATA(cmsg);
 
-          pktinfo->ipi6_ifindex = session->ifindex;
+          if (coap_is_mcast(&session->addr_info.remote)) {
+            pktinfo->ipi6_ifindex = session->addr_info.remote.addr.sin6.sin6_scope_id;
+          } else {
+            pktinfo->ipi6_ifindex = session->ifindex;
+          }
           memcpy(&pktinfo->ipi6_addr,
                  &session->addr_info.local.addr.sin6.sin6_addr,
                  sizeof(pktinfo->ipi6_addr));

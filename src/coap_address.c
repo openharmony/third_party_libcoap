@@ -277,9 +277,11 @@ coap_address_ntop(const coap_address_t *addr, char *dst, int len) {
   if (addr->addr.sa.sa_family == AF_INET) {
     const void *addrptr = &addr->addr.sin.sin_addr;
     (void)inet_ntop(addr->addr.sa.sa_family, addrptr, dst, len);
-  } else {
+  } else if (addr->addr.sa.sa_family == AF_INET6){
     const void *addrptr = &addr->addr.sin6.sin6_addr;
     (void)inet_ntop(addr->addr.sa.sa_family, addrptr, dst, len);
+  } else {
+    coap_log_warn("coap_address_ntop: not support other sa_family");
   }
 #endif
 }
