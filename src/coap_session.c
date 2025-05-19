@@ -38,6 +38,16 @@
 #ifdef COAP_SUPPORT_SOCKET_BROADCAST
 #ifndef _WIN32
 
+static int32_t loopback_packet_check_ipv6(const char *src_buf) {
+  const char addr_perface[] = "::ffff:";
+  if (strlen(src_buf) >= strlen(addr_perface) &&
+    memcmp(src_buf, addr_perface, strlen(addr_perface)) == 0) {
+    return 1;
+  }
+
+  return 0;
+}
+
 static int32_t loopback_packet_check(const char *src_buf) {
   const char addr_perface[] = "::ffff:";
   char tmp_buf[INET6_ADDRSTRLEN] = {0};
@@ -153,7 +163,14 @@ L_IS_LOOPBACK:
 static int32_t is_loopback_packet(const coap_packet_t *packet) {
   char src_buf[INET6_ADDRSTRLEN] = {0};
   coap_address_ntop(&(packet->addr_info.remote), src_buf, INET6_ADDRSTRLEN);
-  return loopback_packet_check(src_buf);
+  if (packet->addr_info.remote.addr.sa.sa_family == AF_INET6) {
+    return loopback_packet_check_ipv6(src_buf);
+  } else if (packet->addr_info.remote.addr.sa.sa_family == AF_INET) {
+    return loopback_packet_check(src_buf);
+  } else {
+    coap_log_err("sa_family %hu is not support\n", packet->addr_info.remote.addr.sa.sa_family);
+    return 1;
+  }
 }
 #endif /* END OF COAP_SUPPORT_SOCKET_BROADCAST */
 
