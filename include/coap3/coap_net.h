@@ -481,7 +481,13 @@ coap_mid_t coap_send_ack(coap_session_t *session, const coap_pdu_t *request);
  */
 COAP_STATIC_INLINE coap_mid_t
 coap_send_rst(coap_session_t *session, const coap_pdu_t *request) {
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+  coap_log_debug("coap_send_rst disabled\n");
+  /* Return value should not be used with COAP_SUPPORT_SOCKET_BROADCAST enabled */
+  return 0;
+#else
   return coap_send_message_type(session, request, COAP_MESSAGE_RST);
+#endif
 }
 
 /**
