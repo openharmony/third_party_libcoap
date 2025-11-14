@@ -1,6 +1,6 @@
 /* coap_pdu.c -- CoAP PDU handling
  *
- * Copyright (C) 2010--2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010--2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -13,7 +13,7 @@
  * @brief CoAP PDU handling
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
 #if defined(HAVE_LIMITS_H)
 #include <limits.h>
@@ -98,9 +98,11 @@ coap_pdu_init(coap_pdu_type_t type, coap_pdu_code_t code, coap_mid_t mid,
               size_t size) {
   coap_pdu_t *pdu;
 
+#ifndef RIOT_VERSION
   assert(type <= 0x3);
   assert(code <= 0xff);
   assert(mid >= 0 && mid <= 0xffff);
+#endif /* RIOT_VERSION */
 
 #ifdef WITH_LWIP
 #if MEMP_STATS
@@ -149,11 +151,25 @@ coap_pdu_init(coap_pdu_type_t type, coap_pdu_code_t code, coap_mid_t mid,
   return pdu;
 }
 
-coap_pdu_t *
+COAP_API coap_pdu_t *
 coap_new_pdu(coap_pdu_type_t type, coap_pdu_code_t code,
              coap_session_t *session) {
-  coap_pdu_t *pdu = coap_pdu_init(type, code, coap_new_message_id(session),
-                                  coap_session_max_pdu_size(session));
+  coap_pdu_t *pdu;
+
+  coap_lock_lock(session->context, return NULL);
+  pdu = coap_new_pdu_lkd(type, code, session);
+  coap_lock_unlock(session->context);
+  return pdu;
+}
+
+coap_pdu_t *
+coap_new_pdu_lkd(coap_pdu_type_t type, coap_pdu_code_t code,
+                 coap_session_t *session) {
+  coap_pdu_t *pdu;
+
+  coap_lock_check_locked(session->context);
+  pdu = coap_pdu_init(type, code, coap_new_message_id_lkd(session),
+                      coap_session_max_pdu_size_lkd(session));
   if (!pdu)
     coap_log_crit("coap_new_pdu: cannot allocate memory for new PDU\n");
   return pdu;
@@ -172,29 +188,49 @@ coap_delete_pdu(coap_pdu_t *pdu) {
   }
 }
 
-/*
- * Note: This does not include any data, just the token and options
- */
-coap_pdu_t *
+COAP_API coap_pdu_t *
 coap_pdu_duplicate(const coap_pdu_t *old_pdu,
                    coap_session_t *session,
                    size_t token_length,
                    const uint8_t *token,
                    coap_opt_filter_t *drop_options) {
+  coap_pdu_t *new_pdu;
+
+  coap_lock_lock(session->context, return NULL);
+  new_pdu = coap_pdu_duplicate_lkd(old_pdu,
+                                   session,
+                                   token_length,
+                                   token,
+                                   drop_options);
+  coap_lock_unlock(session->context);
+  return new_pdu;
+}
+
+
+/*
+ * Note: This does not include any data, just the token and options
+ */
+coap_pdu_t *
+coap_pdu_duplicate_lkd(const coap_pdu_t *old_pdu,
+                       coap_session_t *session,
+                       size_t token_length,
+                       const uint8_t *token,
+                       coap_opt_filter_t *drop_options) {
   uint8_t doing_first = session->doing_first;
   coap_pdu_t *pdu;
 
+  coap_lock_check_locked(session->context);
   /*
-   * Need to make sure that coap_session_max_pdu_size() immediately
+   * Need to make sure that coap_session_max_pdu_size_lkd() immediately
    * returns, rather than wait for the first CSM response from remote
    * that indicates BERT size (TCP/TLS only) as this may be called early
    * the OSCORE logic.
    */
   session->doing_first = 0;
   pdu = coap_pdu_init(old_pdu->type, old_pdu->code,
-                      coap_new_message_id(session),
+                      coap_new_message_id_lkd(session),
                       max(old_pdu->max_size,
-                          coap_session_max_pdu_size(session)));
+                          coap_session_max_pdu_size_lkd(session)));
   /* Restore any pending waits */
   session->doing_first = doing_first;
   if (pdu == NULL)
@@ -360,6 +396,7 @@ coap_add_token(coap_pdu_t *pdu, size_t len, const uint8_t *data) {
 int
 coap_update_token(coap_pdu_t *pdu, size_t len, const uint8_t *data) {
   size_t bias = 0;
+  size_t old_len;
 
   /* must allow for pdu == NULL as callers may rely on this */
   if (!pdu)
@@ -368,6 +405,9 @@ coap_update_token(coap_pdu_t *pdu, size_t len, const uint8_t *data) {
   if (pdu->used_size == 0) {
     return coap_add_token(pdu, len, data);
   }
+
+  old_len = pdu->e_token_length;
+
   if (len < COAP_TOKEN_EXT_1B_BIAS) {
     bias = 0;
   } else if (len < COAP_TOKEN_EXT_2B_BIAS) {
@@ -422,6 +462,10 @@ coap_update_token(coap_pdu_t *pdu, size_t len, const uint8_t *data) {
       break;
     }
   }
+  if (old_len != pdu->e_token_length && pdu->hdr_size && pdu->session)
+    /* Need to fix up the header */
+    if (!coap_pdu_encode_header(pdu, pdu->session->proto))
+      return 0;
   return 1;
 }
 
@@ -950,6 +994,7 @@ coap_pdu_parse_header_size(coap_proto_t proto,
   return header_size;
 }
 
+#if !COAP_DISABLE_TCP
 /*
  * strm
  * return +ve  PDU size including token
@@ -967,7 +1012,7 @@ coap_pdu_parse_size(coap_proto_t proto,
   size_t size = 0;
   const uint8_t *token_start = NULL;
 
-  if ((proto == COAP_PROTO_TCP || proto==COAP_PROTO_TLS) && length >= 1) {
+  if ((proto == COAP_PROTO_TCP || proto == COAP_PROTO_TLS) && length >= 1) {
     uint8_t len = *data >> 4;
     uint8_t tkl = *data & 0x0f;
 
@@ -1006,6 +1051,7 @@ coap_pdu_parse_size(coap_proto_t proto,
 
   return size;
 }
+#endif /* ! COAP_DISABLE_TCP */
 
 int
 coap_pdu_parse_header(coap_pdu_t *pdu, coap_proto_t proto) {
@@ -1250,7 +1296,7 @@ write_prefix(char **obp, size_t *len, const char *prf, size_t prflen) {
 }
 
 static int
-write_char(char **obp, size_t *len, char c, int printable) {
+write_char(char **obp, size_t *len, int c, int printable) {
   /* Make sure space for null terminating byte */
   if (*len < 2 +1) {
     return 0;
@@ -1271,8 +1317,8 @@ write_char(char **obp, size_t *len, char c, int printable) {
 
 int
 coap_pdu_parse_opt(coap_pdu_t *pdu) {
-
   int good = 1;
+
   /* sanity checks */
   if (pdu->code == 0) {
     if (pdu->used_size != 0 || pdu->e_token_length) {
@@ -1342,6 +1388,9 @@ coap_pdu_parse_opt(coap_pdu_t *pdu) {
         outbuflen = sizeof(outbuf);
         obp = outbuf;
         ok = write_prefix(&obp, &outbuflen, "O: ", 3);
+        /*
+         * Not safe to check for 'ok' here as a lot of variables may get
+         * partially changed due to lack of outbuflen */
         while (length > 0 && *opt != COAP_PAYLOAD_START) {
           coap_opt_t *opt_last = opt;
           size_t optsize = next_option_safe(&opt, &length, &pdu->max_opt);
@@ -1366,7 +1415,7 @@ coap_pdu_parse_opt(coap_pdu_t *pdu) {
           }
         }
         if (length && *opt == COAP_PAYLOAD_START) {
-          ok = ok && write_char(&obp, &outbuflen, *opt, i);
+          write_char(&obp, &outbuflen, *opt, i);
         }
         /* write_*() always leaves a spare byte to null terminate */
         *obp = '\000';
@@ -1418,9 +1467,6 @@ coap_pdu_parse(coap_proto_t proto,
 
 size_t
 coap_pdu_encode_header(coap_pdu_t *pdu, coap_proto_t proto) {
-  if (pdu == NULL || pdu->token == NULL)
-    return 0;
-
   uint8_t e_token_length;
 
   if (pdu->actual_token.length < COAP_TOKEN_EXT_1B_BIAS) {
@@ -1446,6 +1492,7 @@ coap_pdu_encode_header(coap_pdu_t *pdu, coap_proto_t proto) {
     pdu->token[-2] = (uint8_t)(pdu->mid >> 8);
     pdu->token[-1] = (uint8_t)(pdu->mid);
     pdu->hdr_size = 4;
+#if !COAP_DISABLE_TCP
   } else if (COAP_PROTO_RELIABLE(proto)) {
     size_t len;
     assert(pdu->used_size >= pdu->e_token_length);
@@ -1453,6 +1500,11 @@ coap_pdu_encode_header(coap_pdu_t *pdu, coap_proto_t proto) {
       coap_log_warn("coap_pdu_encode_header: corrupted PDU\n");
       return 0;
     }
+
+    /* A lot of the reliable code assumes type is CON */
+    if (pdu->type != COAP_MESSAGE_CON)
+      pdu->type = COAP_MESSAGE_CON;
+
     if (proto == COAP_PROTO_WS || proto == COAP_PROTO_WSS)
       len = 0;
     else
@@ -1502,6 +1554,7 @@ coap_pdu_encode_header(coap_pdu_t *pdu, coap_proto_t proto) {
       pdu->token[-1] = pdu->code;
       pdu->hdr_size = 6;
     }
+#endif /* ! COAP_DISABLE_TCP */
   } else {
     coap_log_warn("coap_pdu_encode_header: unsupported protocol\n");
   }
@@ -1515,7 +1568,9 @@ coap_pdu_get_code(const coap_pdu_t *pdu) {
 
 void
 coap_pdu_set_code(coap_pdu_t *pdu, coap_pdu_code_t code) {
+#ifndef RIOT_VERSION
   assert(code <= 0xff);
+#endif /* RIOT_VERSION */
   pdu->code = code;
 }
 
@@ -1542,6 +1597,8 @@ coap_pdu_get_mid(const coap_pdu_t *pdu) {
 
 void
 coap_pdu_set_mid(coap_pdu_t *pdu, coap_mid_t mid) {
+#if (UINT_MAX > 65535)
   assert(mid >= 0 && mid <= 0xffff);
+#endif /* UINT_MAX > 65535 */
   pdu->mid = mid;
 }

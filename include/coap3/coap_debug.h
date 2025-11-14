@@ -1,7 +1,7 @@
 /*
  * coap_debug.h -- debug utilities
  *
- * Copyright (C) 2010-2011,2014-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2011,2014-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -193,6 +193,13 @@ void coap_dtls_set_log_level(coap_log_t level);
 coap_log_t coap_dtls_get_log_level(void);
 
 /**
+ * Get the current logging description.
+ *
+ * @return Ascii representation of logging level.
+ */
+const char *coap_log_level_desc(coap_log_t level);
+
+/**
  * Logging callback handler definition.
  *
  * @param level One of the COAP_LOG_* values, or if used for (D)TLS logging,
@@ -275,7 +282,7 @@ void coap_print_contiki_prefix(coap_log_t level);
  * @param level One of the COAP_LOG_* values.
  */
 #define coap_log(level, ...) do { \
-    if ((int)((level))<=(int)coap_get_log_level()) \
+    if ((level) < (coap_get_log_level() + 1)) \
       coap_log_impl((level), __VA_ARGS__); \
   } while(0)
 #endif /* !WITH_CONTIKI */

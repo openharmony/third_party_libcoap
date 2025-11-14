@@ -2,7 +2,7 @@
  * coap_notls.c -- Stub Datagram Transport Layer Support for libcoap
  *
  * Copyright (C) 2016      Olaf Bergmann <bergmann@tzi.org>
- * Copyright (C) 2021-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2021-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -15,9 +15,22 @@
  * @brief NoTLS specific interface functions
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
-#if !defined(COAP_WITH_LIBTINYDTLS) && !defined(COAP_WITH_LIBOPENSSL) && !defined(COAP_WITH_LIBGNUTLS) && !defined(COAP_WITH_LIBMBEDTLS)
+#if !defined(COAP_WITH_LIBOPENSSL)
+int
+coap_tls_engine_configure(coap_str_const_t *conf_mem) {
+  (void)conf_mem;
+  return 0;
+}
+
+int
+coap_tls_engine_remove(void) {
+  return 0;
+}
+#endif /* ! COAP_WITH_LIBOPENSSL */
+
+#if !defined(COAP_WITH_LIBTINYDTLS) && !defined(COAP_WITH_LIBOPENSSL) && !defined(COAP_WITH_LIBWOLFSSL) && !defined(COAP_WITH_LIBGNUTLS) && !defined(COAP_WITH_LIBMBEDTLS)
 
 int
 coap_dtls_is_supported(void) {
@@ -64,6 +77,24 @@ int
 coap_dtls_rpk_is_supported(void) {
   return 0;
 }
+
+/*
+ * return 0 failed
+ *        1 passed
+ */
+int
+coap_dtls_cid_is_supported(void) {
+  return 0;
+}
+
+#if COAP_CLIENT_SUPPORT
+int
+coap_dtls_set_cid_tuple_change(coap_context_t *c_context, uint8_t every) {
+  (void)c_context;
+  (void)every;
+  return 0;
+}
+#endif /* COAP_CLIENT_SUPPORT */
 
 coap_tls_version_t *
 coap_get_tls_library_version(void) {
@@ -319,10 +350,23 @@ int
 coap_crypto_hash(cose_alg_t alg,
                  const coap_bin_const_t *data,
                  coap_bin_const_t **hash) {
+  SHA1Context sha1_context;
+  coap_binary_t *dummy = NULL;
+
   (void)alg;
-  (void)data;
-  (void)hash;
-  return 0;
+
+  SHA1Reset(&sha1_context);
+  if (SHA1Input(&sha1_context, data->s, data->length) != shaSuccess)
+    return 0;
+  dummy = coap_new_binary(SHA1HashSize);
+  if (!dummy)
+    return 0;
+  if (SHA1Result(&sha1_context, dummy->s) != shaSuccess) {
+    coap_delete_binary(dummy);
+    return 0;
+  }
+  *hash = (coap_bin_const_t *)(dummy);
+  return 1;
 }
 #endif /* COAP_WS_SUPPORT */
 
@@ -387,7 +431,7 @@ coap_crypto_hmac(cose_hmac_alg_t hmac_alg,
 
 #endif /* COAP_OSCORE_SUPPORT */
 
-#else /* !COAP_WITH_LIBTINYDTLS && !COAP_WITH_LIBOPENSSL && !COAP_WITH_LIBGNUTLS */
+#else /* !COAP_WITH_LIBTINYDTLS && !COAP_WITH_LIBOPENSSL && !COAP_WITH_LIBWOLFSSL && !COAP_WITH_LIBGNUTLS */
 
 #ifdef __clang__
 /* Make compilers happy that do not like empty modules. As this function is
@@ -399,4 +443,4 @@ static inline void
 dummy(void) {
 }
 
-#endif /* !COAP_WITH_LIBTINYDTLS && !COAP_WITH_LIBOPENSSL && !COAP_WITH_LIBGNUTLS && !COAP_WITH_LIBMBEDTLS */
+#endif /* !COAP_WITH_LIBTINYDTLS && !COAP_WITH_LIBOPENSSL && !COAP_WITH_LIBWOLFSSL && !COAP_WITH_LIBGNUTLS && !COAP_WITH_LIBMBEDTLS */

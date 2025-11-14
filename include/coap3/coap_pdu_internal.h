@@ -1,7 +1,7 @@
 /*
  * coap_pdu_internal.h -- CoAP PDU structure
  *
- * Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -22,6 +22,14 @@
 #ifdef WITH_LWIP
 #include <lwip/pbuf.h>
 #endif
+
+#ifdef RIOT_VERSION
+#include <limits.h>
+#endif /* RIOT_VERSION */
+
+#ifdef HAVE_LIMITS_H
+#include <limits.h>
+#endif /* HAVE_LIMITS_H */
 
 #include <stdint.h>
 
@@ -70,6 +78,10 @@
 #define COAP_DEFAULT_MAX_PDU_RX_SIZE (COAP_MAX_MESSAGE_SIZE_TCP16+4UL)
 #elif defined(WITH_CONTIKI)
 #define COAP_DEFAULT_MAX_PDU_RX_SIZE (sizeof(coap_packet_t) + UIP_APPDATA_SIZE)
+#elif (UINT_MAX < (8UL*1024*1024+256))
+#define COAP_DEFAULT_MAX_PDU_RX_SIZE (1500UL)
+#elif defined(RIOT_VERSION) && defined(COAP_DISABLE_TCP)
+#define COAP_DEFAULT_MAX_PDU_RX_SIZE (1500UL)
 #else
 /* 8 MiB max-message-size plus some space for options */
 #define COAP_DEFAULT_MAX_PDU_RX_SIZE (8UL*1024*1024+256)
@@ -88,8 +100,12 @@
 
 #define COAP_PDU_IS_EMPTY(pdu)     ((pdu)->code == 0)
 #define COAP_PDU_IS_REQUEST(pdu)   (!COAP_PDU_IS_EMPTY(pdu) && (pdu)->code < 32)
-#define COAP_PDU_IS_RESPONSE(pdu)  ((pdu)->code >= 64 && (pdu)->code < 224)
+/* Code 1.xx (32-63) and 6.xx (192-224) currently invalid */
+#define COAP_PDU_IS_RESPONSE(pdu)  ((pdu)->code >= 64 && (pdu)->code < 192)
 #define COAP_PDU_IS_SIGNALING(pdu) ((pdu)->code >= 224)
+#define COAP_PDU_IS_PING(pdu)      ((COAP_PDU_IS_EMPTY(pdu) && \
+                                     ((pdu)->type == COAP_MESSAGE_CON)) || \
+                                    ((pdu)->code == COAP_SIGNALING_CODE_PING))
 
 #define COAP_PDU_MAX_UDP_HEADER_SIZE 4
 #define COAP_PDU_MAX_TCP_HEADER_SIZE 6
@@ -339,6 +355,42 @@ int coap_update_token(coap_pdu_t *pdu,
  * @return     @c 0 if not repeatable or @c 1 if repeatable.
  */
 int coap_option_check_repeatable(coap_option_num_t number);
+
+/**
+ * Creates a new CoAP PDU.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param type The type of the PDU (one of COAP_MESSAGE_CON, COAP_MESSAGE_NON,
+ *             COAP_MESSAGE_ACK, COAP_MESSAGE_RST).
+ * @param code The message code of the PDU.
+ * @param session The session that will be using this PDU
+ *
+ * @return The skeletal PDU or @c NULL if failure.
+ */
+coap_pdu_t *coap_new_pdu_lkd(coap_pdu_type_t type, coap_pdu_code_t code,
+                             coap_session_t *session);
+
+/**
+ * Duplicate an existing PDU. Specific options can be ignored and not copied
+ * across.  The PDU data payload is not copied across.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param old_pdu      The PDU to duplicate
+ * @param session      The session that will be using this PDU.
+ * @param token_length The length of the token to use in this duplicated PDU.
+ * @param token        The token to use in this duplicated PDU.
+ * @param drop_options A list of options not to copy into the duplicated PDU.
+ *                     If @c NULL, then all options are copied across.
+ *
+ * @return The duplicated PDU or @c NULL if failure.
+ */
+coap_pdu_t *coap_pdu_duplicate_lkd(const coap_pdu_t *old_pdu,
+                                   coap_session_t *session,
+                                   size_t token_length,
+                                   const uint8_t *token,
+                                   coap_opt_filter_t *drop_options);
 
 /** @} */
 

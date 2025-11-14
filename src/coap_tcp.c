@@ -1,7 +1,7 @@
 /*
  * coap_tcp.c -- TCP functions for libcoap
  *
- * Copyright (C) 2019-2023 Olaf Bergmann <bergmann@tzi.org> and others
+ * Copyright (C) 2019-2024 Olaf Bergmann <bergmann@tzi.org> and others
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -14,8 +14,14 @@
  * @brief CoAP TCP handling functions
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
+int
+coap_tcp_is_supported(void) {
+  return !COAP_DISABLE_TCP;
+}
+
+#if !COAP_DISABLE_TCP && !defined(WITH_LWIP) && !defined(WITH_CONTIKI) && !defined(RIOT_VERSION)
 #include <sys/types.h>
 #ifdef HAVE_SYS_SOCKET_H
 # include <sys/socket.h>
@@ -34,12 +40,6 @@
 #endif
 
 int
-coap_tcp_is_supported(void) {
-  return !COAP_DISABLE_TCP;
-}
-
-#if !COAP_DISABLE_TCP
-int
 coap_socket_connect_tcp1(coap_socket_t *sock,
                          const coap_address_t *local_if,
                          const coap_address_t *server,
@@ -47,9 +47,9 @@ coap_socket_connect_tcp1(coap_socket_t *sock,
                          coap_address_t *local_addr,
                          coap_address_t *remote_addr) {
   int on = 1;
-#if !defined(RIOT_VERSION) && COAP_IPV6_SUPPORT
+#if COAP_IPV6_SUPPORT
   int off = 0;
-#endif /* ! RIOT_VERSION && COAP_IPV6_SUPPORT */
+#endif /* COAP_IPV6_SUPPORT */
 #ifdef _WIN32
   u_long u_on = 1;
 #endif
@@ -65,7 +65,6 @@ coap_socket_connect_tcp1(coap_socket_t *sock,
     goto error;
   }
 
-#ifndef RIOT_VERSION
 #ifdef _WIN32
   if (ioctlsocket(sock->fd, FIONBIO, &u_on) == COAP_SOCKET_ERROR) {
 #else
@@ -74,7 +73,6 @@ coap_socket_connect_tcp1(coap_socket_t *sock,
     coap_log_warn("coap_socket_connect_tcp1: ioctl FIONBIO: %s\n",
                   coap_socket_strerror());
   }
-#endif /* RIOT_VERSION */
 
   switch (server->addr.sa.sa_family) {
 #if COAP_IPV4_SUPPORT
@@ -87,13 +85,11 @@ coap_socket_connect_tcp1(coap_socket_t *sock,
   case AF_INET6:
     if (connect_addr.addr.sin6.sin6_port == 0)
       connect_addr.addr.sin6.sin6_port = htons(default_port);
-#ifndef RIOT_VERSION
     /* Configure the socket as dual-stacked */
     if (setsockopt(sock->fd, IPPROTO_IPV6, IPV6_V6ONLY, OPTVAL_T(&off),
                    sizeof(off)) == COAP_SOCKET_ERROR)
       coap_log_warn("coap_socket_connect_tcp1: setsockopt IPV6_V6ONLY: %s\n",
                     coap_socket_strerror());
-#endif /* RIOT_VERSION */
     break;
 #endif /* COAP_IPV6_SUPPORT */
 #if COAP_AF_UNIX_SUPPORT
@@ -176,12 +172,12 @@ coap_socket_connect_tcp2(coap_socket_t *sock,
 
   if (getsockopt(sock->fd, SOL_SOCKET, SO_ERROR, OPTVAL_GT(&error),
                  &optlen) == COAP_SOCKET_ERROR) {
-    coap_log_warn("coap_socket_finish_connect_tcp: getsockopt: %s\n",
+    coap_log_warn("coap_socket_connect_tcp2: getsockopt: %s\n",
                   coap_socket_strerror());
   }
 
   if (error) {
-    coap_log_warn("coap_socket_finish_connect_tcp: connect failed: %s\n",
+    coap_log_warn("coap_socket_connect_tcp2: connect failed: %s\n",
                   coap_socket_format_errno(error));
     coap_socket_close(sock);
     return 0;
@@ -205,9 +201,9 @@ coap_socket_bind_tcp(coap_socket_t *sock,
                      const coap_address_t *listen_addr,
                      coap_address_t *bound_addr) {
   int on = 1;
-#if !defined(RIOT_VERSION) && COAP_IPV6_SUPPORT
+#if COAP_IPV6_SUPPORT
   int off = 0;
-#endif /* ! RIOT_VERSION && COAP_IPV6_SUPPORT */
+#endif /* COAP_IPV6_SUPPORT */
 #ifdef _WIN32
   u_long u_on = 1;
 #endif
@@ -220,7 +216,6 @@ coap_socket_bind_tcp(coap_socket_t *sock,
     goto error;
   }
 
-#ifndef RIOT_VERSION
 #ifdef _WIN32
   if (ioctlsocket(sock->fd, FIONBIO, &u_on) == COAP_SOCKET_ERROR) {
 #else
@@ -229,7 +224,6 @@ coap_socket_bind_tcp(coap_socket_t *sock,
     coap_log_warn("coap_socket_bind_tcp: ioctl FIONBIO: %s\n",
                   coap_socket_strerror());
   }
-#endif /* RIOT_VERSION */
   if (setsockopt(sock->fd, SOL_SOCKET, SO_KEEPALIVE, OPTVAL_T(&on),
                  sizeof(on)) == COAP_SOCKET_ERROR)
     coap_log_warn("coap_socket_bind_tcp: setsockopt SO_KEEPALIVE: %s\n",
@@ -247,13 +241,11 @@ coap_socket_bind_tcp(coap_socket_t *sock,
 #endif /* COAP_IPV4_SUPPORT */
 #if COAP_IPV6_SUPPORT
   case AF_INET6:
-#ifndef RIOT_VERSION
     /* Configure the socket as dual-stacked */
     if (setsockopt(sock->fd, IPPROTO_IPV6, IPV6_V6ONLY, OPTVAL_T(&off),
                    sizeof(off)) == COAP_SOCKET_ERROR)
       coap_log_alert("coap_socket_bind_tcp: setsockopt IPV6_V6ONLY: %s\n",
                      coap_socket_strerror());
-#endif /* RIOT_VERSION */
     break;
 #endif /* COAP_IPV6_SUPPORT */
 #if COAP_AF_UNIX_SUPPORT
@@ -299,14 +291,14 @@ int
 coap_socket_accept_tcp(coap_socket_t *server,
                        coap_socket_t *new_client,
                        coap_address_t *local_addr,
-                       coap_address_t *remote_addr) {
-#ifndef RIOT_VERSION
+                       coap_address_t *remote_addr,
+                       void *extra) {
 #ifdef _WIN32
   u_long u_on = 1;
 #else
   int on = 1;
 #endif
-#endif /* RIOT_VERSION */
+  (void)extra;
 
   server->flags &= ~COAP_SOCKET_CAN_ACCEPT;
 
@@ -322,7 +314,6 @@ coap_socket_accept_tcp(coap_socket_t *server,
     coap_log_warn("coap_socket_accept_tcp: getsockname: %s\n",
                   coap_socket_strerror());
 
-#ifndef RIOT_VERSION
 #ifdef _WIN32
   if (ioctlsocket(new_client->fd, FIONBIO, &u_on) == COAP_SOCKET_ERROR) {
 #else
@@ -331,7 +322,6 @@ coap_socket_accept_tcp(coap_socket_t *server,
     coap_log_warn("coap_socket_accept_tcp: ioctl FIONBIO: %s\n",
                   coap_socket_strerror());
   }
-#endif /* RIOT_VERSION */
   return 1;
 }
 #endif /* !COAP_DISABLE_TCP */

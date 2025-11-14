@@ -1,6 +1,6 @@
 /* libcoap unit tests
  *
- * Copyright (C) 2018,2022-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2018,2022-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -34,6 +34,12 @@
 #include <openssl/ssl.h>
 #endif /* COAP_WITH_LIBOPENSSL */
 
+#ifdef COAP_WITH_LIBWOLFSSL
+#define HAVE_DTLS 1
+#include <wolfssl/options.h>
+#include <wolfssl/ssl.h>
+#endif /* COAP_WITH_LIBWOLFSSL */
+
 #ifdef COAP_WITH_LIBGNUTLS
 #define HAVE_DTLS 1
 #include <gnutls/gnutls.h>
@@ -43,6 +49,10 @@
 #define HAVE_DTLS 1
 #include <mbedtls/version.h>
 #endif /* COAP_WITH_LIBMBEDTLS */
+
+#define ReturnIf_CU_ASSERT_PTR_NOT_NULL(value) \
+  CU_ASSERT_PTR_NOT_NULL(value); \
+  if ((void*)value == NULL) return;
 
 static void
 t_tls1(void) {
@@ -64,6 +74,9 @@ t_tls2(void) {
 #if defined(COAP_WITH_LIBOPENSSL)
   version.version = SSLeay();
   version.type = COAP_TLS_LIBRARY_OPENSSL;
+#elif defined(COAP_WITH_LIBWOLFSSL)
+  version.version = wolfSSL_lib_version_hex();
+  version.type = COAP_TLS_LIBRARY_WOLFSSL;
 #elif defined(COAP_WITH_LIBTINYDTLS)
   const char *vers = dtls_package_version();
   version.version = 0;
@@ -92,7 +105,7 @@ t_tls2(void) {
   version.type = COAP_TLS_LIBRARY_NOTLS;
 #endif /* COAP_WITH_LIBOPENSSL || COAP_WITH_LIBTINYDTLS */
 
-  CU_ASSERT_PTR_NOT_NULL_FATAL(v);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(v);
   CU_ASSERT(version.version == v->version);
   CU_ASSERT(version.type == v->type);
 }

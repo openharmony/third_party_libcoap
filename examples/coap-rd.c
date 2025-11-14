@@ -3,7 +3,7 @@
 /* coap -- simple implementation of the Constrained Application Protocol (CoAP)
  *         as defined in RFC 7252
  *
- * Copyright (C) 2010--2015,2022-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010--2015,2022-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -514,20 +514,18 @@ hnd_post_rd(coap_resource_t *resource COAP_UNUSED,
 
   {
     /* split path into segments and add Location-Path options */
-    unsigned char _b[LOCSIZE];
-    unsigned char *b = _b;
-    size_t buflen = sizeof(_b);
-    int nseg;
+    coap_optlist_t *optlist_chain = NULL;
 
-    nseg = coap_split_path(loc, loc_size, b, &buflen);
-    while (nseg--) {
-      coap_add_option(response,
-                      COAP_OPTION_LOCATION_PATH,
-                      coap_opt_length(b),
-                      coap_opt_value(b));
-      b += coap_opt_size(b);
-    }
+    /* add Location-Path */
+    if (!coap_path_into_optlist(loc, loc_size, COAP_OPTION_LOCATION_PATH,
+                                &optlist_chain))
+      goto error;
+    if (!coap_add_optlist_pdu(response, &optlist_chain))
+      goto error;
+
+    coap_delete_optlist(optlist_chain);
   }
+error:
   coap_free(loc);
 }
 
@@ -559,7 +557,7 @@ usage(const char *program, const char *version) {
     program = ++p;
 
   fprintf(stderr, "%s v%s -- CoRE Resource Directory implementation\n"
-          "(c) 2011-2012,2019-2023 Olaf Bergmann <bergmann@tzi.org> and others\n\n"
+          "(c) 2011-2012,2019-2024 Olaf Bergmann <bergmann@tzi.org> and others\n\n"
           "Build: %s\n"
           "%s\n"
           , program, version, lib_build,

@@ -2,7 +2,7 @@
  * coap_subscribe.h -- subscription handling for CoAP
  *                see RFC7641
  *
- * Copyright (C) 2010-2012,2014-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2012,2014-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -60,8 +60,16 @@ void coap_resource_set_get_observable(coap_resource_t *resource, int mode);
  *
  * @return         @c 1 if the Observe has been triggered, @c 0 otherwise.
  */
-int coap_resource_notify_observers(coap_resource_t *resource,
-                                   const coap_string_t *query);
+COAP_API int coap_resource_notify_observers(coap_resource_t *resource,
+                                            const coap_string_t *query);
+
+/**
+ * Checks all known resources to see if they are dirty and then notifies
+ * subscribed observers.
+ *
+ * @param context The context to check for dirty resources.
+ */
+COAP_API void coap_check_notify(coap_context_t *context);
 
 /**
  * Callback handler definition called when a new observe has been set up,
@@ -205,12 +213,12 @@ void coap_persist_track_funcs(coap_context_t *context,
  *
  * @return ptr to subscription if success else @c NULL.
  */
-coap_subscription_t *coap_persist_observe_add(coap_context_t *context,
-                                              coap_proto_t e_proto,
-                                              const coap_address_t *e_listen_addr,
-                                              const coap_addr_tuple_t *s_addr_info,
-                                              const coap_bin_const_t *raw_packet,
-                                              const coap_bin_const_t *oscore_info);
+COAP_API coap_subscription_t *coap_persist_observe_add(coap_context_t *context,
+                                                       coap_proto_t e_proto,
+                                                       const coap_address_t *e_listen_addr,
+                                                       const coap_addr_tuple_t *s_addr_info,
+                                                       const coap_bin_const_t *raw_packet,
+                                                       const coap_bin_const_t *oscore_info);
 
 /**
  * Start up persist tracking using the libcoap module. If the files already
@@ -229,11 +237,11 @@ coap_subscription_t *coap_persist_observe_add(coap_context_t *context,
  *
  * @return  @c 1 if success else @c 0.
  */
-int coap_persist_startup(coap_context_t *context,
-                         const char *dyn_resource_save_file,
-                         const char *observe_save_file,
-                         const char *obs_cnt_save_file,
-                         uint32_t save_freq);
+COAP_API int coap_persist_startup(coap_context_t *context,
+                                  const char *dyn_resource_save_file,
+                                  const char *observe_save_file,
+                                  const char *obs_cnt_save_file,
+                                  uint32_t save_freq);
 
 /**
  * Stop tracking persist information, leaving the current persist information
@@ -247,7 +255,7 @@ int coap_persist_startup(coap_context_t *context,
  *
  * @param context The context that tracking information is to be stopped on.
  */
-void coap_persist_stop(coap_context_t *context);
+COAP_API void coap_persist_stop(coap_context_t *context);
 
 /**
  * Sets the current observe number value.
@@ -257,6 +265,22 @@ void coap_persist_stop(coap_context_t *context);
  */
 void coap_persist_set_observe_num(coap_resource_t *resource,
                                   uint32_t observe_num);
+
+/**
+ * Cancel an observe that is being tracked by the client large receive logic.
+ * (coap_context_set_block_mode() has to be called)
+ * This will trigger the sending of an observe cancel pdu to the server.
+ *
+ * @param session  The session that is being used for the observe.
+ * @param token    The original token used to initiate the observation.
+ * @param message_type The COAP_MESSAGE_ type (NON or CON) to send the observe
+ *                 cancel pdu as.
+ *
+ * @return @c 1 if observe cancel transmission initiation is successful,
+ *         else @c 0.
+ */
+COAP_API int coap_cancel_observe(coap_session_t *session, coap_binary_t *token,
+                                 coap_pdu_type_t message_type);
 
 /** @} */
 

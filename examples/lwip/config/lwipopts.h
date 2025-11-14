@@ -2,7 +2,7 @@
  * lwipopts.h -- LwIP example
  *
  * Copyright (C) 2013-2016 Christian Amsüss <chrysn@fsfe.org>
- * Copyright (C) 2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2018-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -10,7 +10,14 @@
  * of use.
  */
 
-#define NO_SYS                     1
+/*
+ * NO_SYS = 0
+ *  Use lwIP OS-awareness (multi threaded, semaphores, mutexes and mboxes).
+ *
+ * NO_SYS = 1
+ *  Use lwIP without OS-awareness (no thread, semaphores, mutexes or mboxes).
+ */
+#define NO_SYS                     0
 #define LWIP_SOCKET                (NO_SYS==0)
 #define LWIP_NETCONN               (NO_SYS==0)
 #define LWIP_NETIF_API             (NO_SYS==0)
@@ -23,9 +30,8 @@
 #define LWIP_IPV6_MLD                   0
 #define LWIP_ICMP6                 (LWIP_IPV6==1)
 
-#ifndef LWIP_RAND
-#define LWIP_RAND() ((u32_t)rand())
-#endif
+/* Set to 1 if TCP support is required */
+#define LWIP_TCP                        0
 
 #ifndef netif_get_index
 #define netif_get_index(netif)      ((u8_t)((netif)->num + 1))
@@ -34,7 +40,13 @@
 #if NO_SYS
 #define LOCK_TCPIP_CORE()
 #define UNLOCK_TCPIP_CORE()
+#else
+#define COAP_THREAD_SAFE 1
+#define COAP_THREAD_RECURSIVE_CHECK 0
+#define LWIP_TCPIP_CORE_LOCKING 1
 #endif
+
+#define MEMP_NUM_SYS_TIMEOUT    10
 
 #define MEMP_USE_CUSTOM_POOLS 1
 #define MEM_SIZE (4 * 1024)

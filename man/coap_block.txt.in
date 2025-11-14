@@ -12,6 +12,7 @@ NAME
 ----
 coap_block,
 coap_context_set_block_mode,
+coap_context_set_max_block_size,
 coap_add_data_large_request,
 coap_add_data_large_response,
 coap_get_data_large,
@@ -24,7 +25,10 @@ SYNOPSIS
 *#include <coap@LIBCOAP_API_VERSION@/coap.h>*
 
 *void coap_context_set_block_mode(coap_context_t *_context_,
-uint8_t _block_mode_);*
+uint32_t _block_mode_);*
+
+*int coap_context_set_max_block_size(coap_context_t *_context_,
+size_t _max_block_size_);*
 
 *int coap_add_data_large_request(coap_session_t *_session_,
 coap_pdu_t *_pdu_, size_t _length_, const uint8_t *_data_,
@@ -46,7 +50,8 @@ size_t _length_, const uint8_t *_data_, size_t _offset_, size_t _total_);*
 
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -104,7 +109,8 @@ In RAM constrained environments, option 2 may be the preferred method.
 This man page focuses on getting libcoap to do all the work, not how to do it
 all in the application.
 
-However, if the client supplies a Block1 or Block2 Option in the PDU where the
+However, if the client supplies a Block1 or Block2 Option in a GET request type
+PDU where the
 block number is not 0, this is assumed to be a random access request and any
 other blocks will not be requested by libcoap even if instructed otherwise.
 
@@ -148,8 +154,11 @@ session _block_mode_.
 #define COAP_BLOCK_USE_LIBCOAP   0x01 /* Use libcoap to do block requests */
 #define COAP_BLOCK_SINGLE_BODY   0x02 /* Deliver the data as a single body */
 #define COAP_BLOCK_TRY_Q_BLOCK   0x04 /* Try Q-Block method */
-#define COAP_BLOCK_USE_M_Q_BLOCK 0x08 /* Use M bit when recovering Q-Block2 */
-#define COAP_BLOCK_NO_PREEMPTIVE_RTAG 0x10 /* Don't use pre-emptive Request-Tags */
+#define COAP_BLOCK_USE_M_Q_BLOCK 0x08 /* (Client) Use M bit when recovering Q-Block2 */
+#define COAP_BLOCK_NO_PREEMPTIVE_RTAG 0x10 /* (Client) Don't use pre-emptive Request-Tags */
+#define COAP_BLOCK_STLESS_FETCH  0x20 /* (Client) Assume server supports stateless FETCH */
+#define COAP_BLOCK_STLESS_BLOCK2 0x40 /* (Server) Server is stateless for Block2 transfers */
+#define COAP_BLOCK_NOT_RANDOM_BLOCK1 0x80 /* (Server) Disable server handling random order block1 */
 ----
 _block_mode_ is an or'd set of zero or more COAP_BLOCK_* definitions.
 
@@ -197,6 +206,30 @@ DELETE) on the off chance that there may be multiple Block2 based
 responses for multiple requests to the same resource that need to be
 differentiated between.
 
+If *COAP_BLOCK_STLESS_FETCH* is set, then it is assumed that the server
+supports stateless support for FETCH requests - in other words, the FETCH
+request always includes the FETCH data when requesting the next block of data
+from the server when using Block2.
+
+If *COAP_BLOCK_STLESS_BLOCK2* is set, then the server does not maintain state
+for any data returned that uses Block2 to split up the data chunks.
+The application is called for every request to get the complete set of data which
+is then split into the separate Block2 responses as appropriate.
+
+If *COAP_BLOCK_NOT_RANDOM_BLOCK1* is set, then the server does not allow any
+Block1 packets arriving in the wrong block number order by returning
+4.08 error codes. Normally this should not be set as networks can re-order
+the arrival of UDP packets, in particular this may happen if NON is being used
+for Block1 by the client.
+
+*NOTE:* This is ignored if Q-Block1 is being used.
+
+*Function: coap_context_set_max_block_size()*
+
+The *coap_context_set_max_block_size*() function is used to set the
+_max_block_size_ in the _context_ that a server supports when the Block1 or
+Block2 options are used.  This must be set before a server session is created.
+
 *Function: coap_add_data_large_request()*
 
 The *coap_add_data_large_request*() function is similar to *coap_add_data*(),
@@ -216,7 +249,8 @@ transmitted. The callback function _release_func_ can be used to release
 storage that has been dynamically allocated to hold the transmit data. If not
 NULL, the callback function is called once the final block of _data_ has been
 transmitted. The user-defined parameter _app_ptr_ is the same value that was
-passed to *coap_add_data_large_request*().
+passed to *coap_add_data_large_request*(). Even if there is an error return,
+_release_func_ (if set) is always called.
 
 *NOTE:* This function must only be called once per _pdu_.
 
@@ -238,7 +272,8 @@ transmitted. The callback function _release_func_ can be used to release
 storage that has been dynamically allocated to hold the transmit data. If not
 NULL, the callback function is called once the final block of _data_ has been
 transmitted. The user-defined parameter _app_ptr_ is the same value that was
-passed to *coap_add_data_large_response*().
+passed to *coap_add_data_large_response*(). Even if there is an error return,
+_release_func_ (if set) is always called.
 
 It also adds in the appropriate CoAP options such as Block2, Size2 and ETag to
 handle block-wise transfer if the data does not fit in a single PDU.
@@ -304,6 +339,8 @@ RETURN VALUES
 *coap_block_build_body*() returns the current state of the body's data
 (which may have some missing gaps) or NULL on error.
 
+*coap_context_set_max_block_size*() returns 0 on failure, 1 on success.
+
 *coap_q_block_is_supported*() returns 0 on failure, 1 on success.
 
 EXAMPLES
@@ -316,14 +353,12 @@ EXAMPLES
 
 static int
 build_send_pdu(coap_context_t *context, coap_session_t *session,
-uint8_t msgtype, uint8_t request_code, const char *uri, const char *query,
-unsigned char *data, size_t length, int observe) {
-
+               uint8_t msgtype, uint8_t request_code, const char *path,
+               const char *query, unsigned char *data, size_t length,
+               int observe) {
   coap_pdu_t *pdu;
-  uint8_t buf[1024];
+  uint8_t buf[8];
   size_t buflen;
-  uint8_t *sbuf = buf;
-  int res;
   coap_optlist_t *optlist_chain = NULL;
   /* Remove (void) definition if variable is used */
   (void)context;
@@ -344,39 +379,27 @@ unsigned char *data, size_t length, int observe) {
     goto error;
   }
 
-  if (uri) {
-    /* Add in the URI options */
-    buflen = sizeof(buf);
-    res = coap_split_path((const uint8_t*)uri, strlen(uri), sbuf, &buflen);
-    while (res--) {
-      if (!coap_insert_optlist(&optlist_chain,
-                               coap_new_optlist(COAP_OPTION_URI_PATH,
-                        coap_opt_length(sbuf), coap_opt_value(sbuf))))
-        goto error;
-      sbuf += coap_opt_size(sbuf);
-    }
+  if (path) {
+    /* Add in the Uri-Path options */
+    if (!coap_path_into_optlist((const uint8_t *)path, strlen(path),
+                                COAP_OPTION_URI_PATH, &optlist_chain))
+      goto error;
   }
 
   if (query) {
-    /* Add in the QUERY options */
-    buflen = sizeof(buf);
-    res = coap_split_query((const uint8_t*)query, strlen(query), sbuf, &buflen);
-    while (res--) {
-      if (!coap_insert_optlist(&optlist_chain,
-                               coap_new_optlist(COAP_OPTION_URI_QUERY,
-                        coap_opt_length(sbuf), coap_opt_value(sbuf))))
-        goto error;
-      sbuf += coap_opt_size(sbuf);
-    }
+    /* Add in the Uri-Query options */
+    if (!coap_query_into_optlist((const uint8_t *)query, strlen(query),
+                                 COAP_OPTION_URI_QUERY, &optlist_chain))
+      goto error;
   }
 
   if (request_code == COAP_REQUEST_GET && observe) {
     /* Indicate that we want to observe this resource */
     if (!coap_insert_optlist(&optlist_chain,
                              coap_new_optlist(COAP_OPTION_OBSERVE,
-                               coap_encode_var_safe(buf, sizeof(buf),
-                               COAP_OBSERVE_ESTABLISH), buf)
-                             ))
+                                              coap_encode_var_safe(buf, sizeof(buf),
+                                                  COAP_OBSERVE_ESTABLISH), buf)
+                            ))
       goto error;
   }
 
@@ -394,12 +417,14 @@ unsigned char *data, size_t length, int observe) {
 
   if (coap_send(session, pdu) == COAP_INVALID_MID)
     goto error;
+  coap_delete_optlist(optlist_chain);
   return 1;
 
 error:
 
   if (pdu)
     coap_delete_pdu(pdu);
+  coap_delete_optlist(optlist_chain);
   return 0;
 
 }
@@ -447,8 +472,8 @@ main(int argc, char *argv[]) {
 
 static void
 hnd_get_time(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
-
+             const coap_pdu_t *request, const coap_string_t *query,
+             coap_pdu_t *response) {
   unsigned char buf[40];
   size_t len;
   time_t now;
@@ -462,8 +487,7 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
   if (query != NULL && coap_string_equal(query, coap_make_str_const("secs"))) {
     /* Output secs since Jan 1 1970 */
     len = snprintf((char *)buf, sizeof(buf), "%lu", now);
-  }
-  else {
+  } else {
     /* Output human-readable time */
     struct tm *tmp;
     tmp = gmtime(&now);
@@ -568,9 +592,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

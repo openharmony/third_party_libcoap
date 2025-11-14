@@ -76,7 +76,8 @@ coap_opt_iterator_t *_oi_, const coap_opt_filter_t *_filter_);*
 
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -314,7 +315,7 @@ information about the received data by updating _length_ with the length of
 data available, and _data_ with a pointer to where the data is located.
 
 *NOTE:* This function has been updated by *coap_get_data_large*() when large
-transfers may take place.  See coap_block(3).
+transfers may take place.  See *coap_block*(3).
 
 RETURN VALUES
 -------------
@@ -395,7 +396,7 @@ get_pdu_information(coap_pdu_t *pdu) {
   coap_option_iterator_init(pdu, &opt_iter, COAP_OPT_ALL);
   while ((option = coap_option_next(&opt_iter))) {
     coap_log_info("A: Option %d, Length %u\n",
-             opt_iter.number, coap_opt_length(option));
+                  opt_iter.number, coap_opt_length(option));
   }
   /* Iterate through options, some ignored */
   coap_option_filter_clear(&ignore_options);
@@ -403,12 +404,10 @@ get_pdu_information(coap_pdu_t *pdu) {
   coap_option_iterator_init(pdu, &opt_iter, &ignore_options);
   while ((option = coap_option_next(&opt_iter))) {
     coap_log_info("I: Option %d, Length %u\n",
-             opt_iter.number, coap_opt_length(option));
+                  opt_iter.number, coap_opt_length(option));
   }
 
   /* Pull in the payload information */
-  ret = coap_get_data(pdu, &pdu_data_length, &pdu_data);
-    /* or */
   ret = coap_get_data_large(pdu, &pdu_data_length, &pdu_data,
                             &pdu_data_offset, &pdu_data_total_length);
 
@@ -435,9 +434,11 @@ for the current set of defined CoAP Options.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

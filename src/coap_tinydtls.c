@@ -2,7 +2,7 @@
  * coap_tinydtls.c -- Datagram Transport Layer Support for libcoap with tinydtls
  *
  * Copyright (C) 2016-2020 Olaf Bergmann <bergmann@tzi.org>
- * Copyright (C) 2020-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2020-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -15,7 +15,7 @@
  * @brief TinyDTLS specific handling functions
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
 #ifdef COAP_WITH_LIBTINYDTLS
 
@@ -47,6 +47,9 @@ typedef struct coap_tiny_context_t {
   coap_binary_t *priv_key;
   coap_binary_t *pub_key;
 #endif /* DTLS_ECC */
+#if (DTLS_MAX_CID_LENGTH > 0)
+  uint8_t use_cid;
+#endif /* DTLS_MAX_CID_LENGTH > 0 */
 } coap_tiny_context_t;
 
 #if ! defined(DTLS_PSK) && ! defined(DTLS_ECC)
@@ -104,6 +107,37 @@ coap_dtls_rpk_is_supported(void) {
   return 0;
 #endif /* ! DTLS_ECC */
 }
+
+/*
+ * return 0 failed
+ *        1 passed
+ */
+int
+coap_dtls_cid_is_supported(void) {
+#if (DTLS_MAX_CID_LENGTH > 0)
+  return 1;
+#else /* ! DTLS_MAX_CID_LENGTH > 0 */
+  return 0;
+#endif /* ! DTLS_MAX_CID_LENGTH > 0 */
+}
+
+#if COAP_CLIENT_SUPPORT
+/*
+ * TinyDTLS only supports client CID if compiled appropriately, and
+ * has CID support (i.e DTLS_MAX_CID_LENGTH is defined and used).
+ */
+int
+coap_dtls_set_cid_tuple_change(coap_context_t *c_context, uint8_t every) {
+#if (DTLS_MAX_CID_LENGTH > 0)
+  c_context->testing_cids = every;
+  return 1;
+#else /* ! DTLS_MAX_CID_LENGTH > 0 */
+  (void)c_context;
+  (void)every;
+  return 0;
+#endif /* ! DTLS_MAX_CID_LENGTH > 0 */
+}
+#endif /* COAP_CLIENT_SUPPORT */
 
 static coap_log_t
 dtls_map_logging(log_t d_level) {
@@ -220,21 +254,41 @@ coap_dtls_get_log_level(void) {
 static void
 get_session_addr(const session_t *s, coap_address_t *a) {
 #if defined(WITH_CONTIKI) || defined(WITH_LWIP)
+#if LWIP_SOCKET
+  memset(&a->addr, 0, sizeof(a->addr));
+  switch (s->addr.sa.sa_family) {
+#if LWIP_IPV4
+  case AF_INET:
+    memcpy(&a->addr, &s->addr.sin.sin_addr, sizeof(s->addr.sin.sin_addr));
+    a->port = s->addr.sin.sin_port;
+    break;
+#endif /* LWIP_IPV4 */
+#if LWIP_IPV6
+  case AF_INET6:
+    memcpy(&a->addr, &s->addr.sin6.sin6_addr, sizeof(s->addr.sin6.sin6_addr));
+    a->port = s->addr.sin6.sin6_port;
+    break;
+#endif /* LWIP_IPV6 */
+  default:
+    break;
+  }
+#else /* ! LWIP_SOCKET */
   a->addr = s->addr;
   a->port = s->port;
+#endif /* ! LWIP_SOCKET */
 #elif defined(WITH_RIOT_SOCK)
   if (s->addr.family == AF_INET6) {
-    a->size = (socklen_t)sizeof(a->addr.sin6);
-    a->addr.sa.sa_family = s->addr.family;
-    memcpy(&a->addr.sin6.sin6_addr, &s->addr.ipv6,
-           sizeof(a->addr.sin6.sin6_addr));
-    a->addr.sin6.sin6_port = s->addr.port;
+    a->riot.family = s->addr.family;
+    memcpy(&a->riot.addr.ipv6, &s->addr.ipv6,
+           sizeof(a->riot.addr.ipv6));
+    a->riot.port = ntohs(s->addr.port);
+    a->riot.netif = 0;
 #ifdef SOCK_HAS_IPV4
   } else if (s->addr.family == AF_INET) {
-    a->addr.sa.sa_family = s->addr.family;
-    a->size = (socklen_t)sizeof(a->addr.sin);
-    memcpy(&a->addr.sin.sin_addr, &s->addr.ipv4, sizeof(a->addr.sin.sin_addr));
-    a->addr.sin.sin_port = s->addr.port;
+    a->riot.family = s->addr.family;
+    memcpy(&a->riot.addr.ipv4, &s->addr.ipv4, sizeof(a->riot.addr.ipv4));
+    a->riot.port = ntohs(s->addr.port);
+    a->riot.netif = 0;
 #endif /* SOCK_HAS_IPV4 */
   }
 #else /* ! WITH_CONTIKI && ! WITH_LWIP && ! WITH_RIOT_SOCK */
@@ -254,22 +308,39 @@ get_session_addr(const session_t *s, coap_address_t *a) {
 static void
 put_session_addr(const coap_address_t *a, session_t *s) {
 #if defined(WITH_CONTIKI) || defined(WITH_LWIP)
+#if LWIP_SOCKET
+#if LWIP_IPV6 && LWIP_IPV4
+  if (a->addr.type == IPADDR_TYPE_V6) {
+    s->addr.sa.sa_family = AF_INET6;
+    s->size = (socklen_t)sizeof(s->addr.sin6);
+    memcpy(&s->addr.sin6.sin6_addr, &a->addr, sizeof(s->addr.sin6.sin6_addr));
+    s->addr.sin6.sin6_port = a->port;
+  } else if (a->addr.type == IPADDR_TYPE_V4) {
+    s->addr.sa.sa_family = AF_INET;
+    s->size = (socklen_t)sizeof(s->addr.sin);
+    memcpy(&s->addr.sin.sin_addr, &a->addr, sizeof(s->addr.sin.sin_addr));
+    s->addr.sin.sin_port = a->port;
+  }
+#else /* ! LWIP_IPV6 || ! LWIP_IPV4 */
+#endif /* ! LWIP_IPV6 || ! LWIP_IPV4 */
+#else /* ! LWIP_SOCKET */
   s->size = (unsigned char)sizeof(s->addr);
   s->addr = a->addr;
   s->port = a->port;
+#endif /* ! LWIP_SOCKET */
 #elif defined(WITH_RIOT_SOCK)
-  if (a->addr.sa.sa_family == AF_INET6) {
-    s->size = (socklen_t)sizeof(s->addr.ipv6);
-    s->addr.family = a->addr.sa.sa_family;
-    memcpy(&s->addr.ipv6, &a->addr.sin6.sin6_addr,
+  if (a->riot.family == AF_INET6) {
+    s->size = sizeof(s->addr.ipv6);
+    s->addr.family = a->riot.family;
+    memcpy(&s->addr.ipv6, &a->riot.addr.ipv6,
            sizeof(s->addr.ipv6));
-    s->addr.port = a->addr.sin6.sin6_port;
+    s->addr.port = htons(a->riot.port);
 #ifdef SOCK_HAS_IPV4
-  } else if (a->addr.sa.sa_family == AF_INET) {
-    s->size = (socklen_t)sizeof(s->addr.ipv4);
-    s->addr.family = a->addr.sa.sa_family;
-    memcpy(&a->addr.ipv4, &s->addr.sin.sin_addr, sizeof(a->addr.ipv4));
-    s->addr.port = a->addr.sin.sin_port;
+  } else if (a->r.family == AF_INET) {
+    s->size = sizeof(s->addr.ipv4);
+    s->addr.family = a->r.family;
+    memcpy(&a->addr.ipv4, &s->r.addr.ipv4, sizeof(a->addr.ipv4));
+    s->addr.port = htons(a->r.port);
 #endif /* SOCK_HAS_IPV4 */
   }
 #else /* ! WITH_CONTIKI && ! WITH_LWIP && ! WITH_RIOT_SOCK */
@@ -323,6 +394,8 @@ dtls_application_data(struct dtls_context_t *dtls_context,
     return -1;
   }
 
+  coap_log_debug("*  %s: dtls:  recv %4d bytes\n",
+                 coap_session_str(coap_session), (int)len);
   return coap_handle_dgram(coap_context, coap_session, data, len);
 }
 
@@ -332,7 +405,7 @@ static int
 dtls_event(struct dtls_context_t *dtls_context,
            session_t *dtls_session,
            dtls_alert_level_t level,
-           uint16_t code) {
+           unsigned short code) {
   (void)dtls_context;
   (void)dtls_session;
 
@@ -420,10 +493,10 @@ get_psk_info(struct dtls_context_t *dtls_context,
 
       lhint.length = id_len;
       lhint.s = id;
-      cpsk_info =
-          setup_cdata->validate_ih_call_back(&lhint,
-                                             coap_session,
-                                             setup_cdata->ih_call_back_arg);
+      coap_lock_callback_ret(cpsk_info, coap_session->context,
+                             setup_cdata->validate_ih_call_back(&lhint,
+                                                                coap_session,
+                                                                setup_cdata->ih_call_back_arg));
       if (cpsk_info) {
         psk_identity = &cpsk_info->identity;
         coap_session_refresh_psk_identity(coap_session, &cpsk_info->identity);
@@ -541,6 +614,20 @@ error:
 }
 #endif /* DTLS_PSK */
 
+static void
+dtls_update_user_parameters(struct dtls_context_t *ctx,
+                            session_t *session, dtls_user_parameters_t *user_parameters) {
+  (void) ctx;
+  (void) session;
+#if (DTLS_MAX_CID_LENGTH > 0)
+  coap_tiny_context_t *t_context =
+      (coap_tiny_context_t *)dtls_get_app_data(ctx);
+  user_parameters->support_cid = t_context ? t_context->use_cid : 0;
+#else /* ! DTLS_MAX_CID_LENGTH > 0 */
+  (void)user_parameters;
+#endif /* ! DTLS_MAX_CID_LENGTH > 0 */
+}
+
 #ifdef DTLS_ECC
 static int
 get_ecdsa_key(struct dtls_context_t *dtls_context,
@@ -580,6 +667,8 @@ verify_ecdsa_key(struct dtls_context_t *dtls_context COAP_UNUSED,
                  size_t key_size) {
   coap_tiny_context_t *t_context =
       (coap_tiny_context_t *)dtls_get_app_data(dtls_context);
+  int ret;
+
   if (t_context && t_context->setup_data.validate_cn_call_back) {
     /* Need to build asn.1 certificate - code taken from tinydtls */
     uint8 *p;
@@ -608,16 +697,20 @@ verify_ecdsa_key(struct dtls_context_t *dtls_context COAP_UNUSED,
                                          &remote_addr, dtls_session->ifindex);
     if (!c_session)
       return -3;
-    if (!t_context->setup_data.validate_cn_call_back(COAP_DTLS_RPK_CERT_CN,
-                                                     buf, p-buf, c_session, 0, 1, t_context->setup_data.cn_call_back_arg)) {
+    coap_lock_callback_ret(ret, t_context->coap_context,
+                           t_context->setup_data.validate_cn_call_back(COAP_DTLS_RPK_CERT_CN,
+                               buf, p-buf, c_session, 0, 1, t_context->setup_data.cn_call_back_arg));
+    if (!ret) {
       return -1;
     }
   }
   return 0;
 }
+
 static dtls_handler_t ec_cb = {
   .write = dtls_send_to_peer,
   .read = dtls_application_data,
+  .get_user_parameters = dtls_update_user_parameters,
   .event = dtls_event,
 #ifdef DTLS_PSK
   .get_psk_info = NULL,
@@ -630,6 +723,7 @@ static dtls_handler_t ec_cb = {
 static dtls_handler_t psk_cb = {
   .write = dtls_send_to_peer,
   .read = dtls_application_data,
+  .get_user_parameters = dtls_update_user_parameters,
   .event = dtls_event,
 #ifdef DTLS_PSK
   .get_psk_info = get_psk_info,
@@ -757,7 +851,7 @@ coap_dtls_free_session(coap_session_t *coap_session) {
     coap_log_debug("***removed session %p\n", coap_session->tls);
     coap_free_type(COAP_DTLS_SESSION, coap_session->tls);
     coap_session->tls = NULL;
-    coap_handle_event(coap_session->context, COAP_EVENT_DTLS_CLOSED, coap_session);
+    coap_handle_event_lkd(coap_session->context, COAP_EVENT_DTLS_CLOSED, coap_session);
   }
 }
 
@@ -773,6 +867,8 @@ coap_dtls_send(coap_session_t *session,
   assert(dtls_context);
 
   coap_event_dtls = -1;
+  coap_log_debug("*  %s: dtls:  sent %4d bytes\n",
+                 coap_session_str(session), (int)data_len);
   /* Need to do this to not get a compiler warning about const parameters */
   memcpy(&data_rw, &data, sizeof(data_rw));
   res = dtls_write(dtls_context,
@@ -782,23 +878,29 @@ coap_dtls_send(coap_session_t *session,
     coap_log_warn("coap_dtls_send: cannot send PDU\n");
 
   if (coap_event_dtls >= 0) {
-    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected() */
+    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected_lkd() */
     if (coap_event_dtls != COAP_EVENT_DTLS_CLOSED)
-      coap_handle_event(session->context, coap_event_dtls, session);
-    if (coap_event_dtls == COAP_EVENT_DTLS_CONNECTED)
+      coap_handle_event_lkd(session->context, coap_event_dtls, session);
+    if (coap_event_dtls == COAP_EVENT_DTLS_CONNECTED) {
+#if (DTLS_MAX_CID_LENGTH > 0)
+      if (session->type == COAP_SESSION_TYPE_CLIENT) {
+        dtls_peer_t *peer = dtls_get_peer(dtls_context, (session_t *)session->tls);
+        dtls_security_parameters_t *security = dtls_security_params(peer);
+
+        if (security->write_cid_length > 0) {
+          session->negotiated_cid = 1;
+        } else {
+          coap_log_info("** %s: CID was not negotiated\n", coap_session_str(session));
+          session->negotiated_cid = 0;
+        }
+      }
+#endif /* DTLS_MAX_CID_LENGTH > 0 */
       coap_session_connected(session);
-    else if (coap_event_dtls == COAP_EVENT_DTLS_CLOSED || coap_event_dtls == COAP_EVENT_DTLS_ERROR)
-      coap_session_disconnected(session, COAP_NACK_TLS_FAILED);
+    } else if (coap_event_dtls == COAP_EVENT_DTLS_CLOSED || coap_event_dtls == COAP_EVENT_DTLS_ERROR) {
+      coap_session_disconnected_lkd(session, COAP_NACK_TLS_FAILED);
+    }
   }
 
-  if (res > 0) {
-    if (res == (ssize_t)data_len)
-      coap_log_debug("*  %s: dtls:  sent %4d bytes\n",
-                     coap_session_str(session), res);
-    else
-      coap_log_debug("*  %s: dtls:  sent %4d of %4zd bytes\n",
-                     coap_session_str(session), res, data_len);
-  }
   return res;
 }
 
@@ -859,13 +961,27 @@ coap_dtls_receive(coap_session_t *session,
   }
 
   if (coap_event_dtls >= 0) {
-    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected() */
+    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected_lkd() */
     if (coap_event_dtls != COAP_EVENT_DTLS_CLOSED)
-      coap_handle_event(session->context, coap_event_dtls, session);
-    if (coap_event_dtls == COAP_EVENT_DTLS_CONNECTED)
+      coap_handle_event_lkd(session->context, coap_event_dtls, session);
+    if (coap_event_dtls == COAP_EVENT_DTLS_CONNECTED) {
       coap_session_connected(session);
-    else if (coap_event_dtls == COAP_EVENT_DTLS_CLOSED || coap_event_dtls == COAP_EVENT_DTLS_ERROR)
-      coap_session_disconnected(session, COAP_NACK_TLS_FAILED);
+#if (DTLS_MAX_CID_LENGTH > 0)
+      if (session->type == COAP_SESSION_TYPE_CLIENT) {
+        dtls_peer_t *peer = dtls_get_peer(dtls_context, (session_t *)session->tls);
+        dtls_security_parameters_t *security = dtls_security_params(peer);
+
+        if (security->write_cid_length > 0) {
+          session->negotiated_cid = 1;
+        } else {
+          session->negotiated_cid = 0;
+        }
+      }
+#endif /* DTLS_MAX_CID_LENGTH > 0 */
+    } else if (coap_event_dtls == COAP_EVENT_DTLS_CLOSED || coap_event_dtls == COAP_EVENT_DTLS_ERROR) {
+      coap_session_disconnected_lkd(session, COAP_NACK_TLS_FAILED);
+      err = -1;
+    }
   }
 
   return err;
@@ -1192,24 +1308,22 @@ pem_decode_mem_asn1(const char *begstr, const uint8_t *str) {
 int
 coap_dtls_context_set_pki(coap_context_t *ctx,
                           const coap_dtls_pki_t *setup_data,
-                          const coap_dtls_role_t role COAP_UNUSED) {
+                          const coap_dtls_role_t role) {
 #ifdef DTLS_ECC
   coap_tiny_context_t *t_context;
-  coap_binary_t *asn1_priv;
-  coap_binary_t *asn1_pub;
+  coap_binary_t *asn1_priv = NULL;
+  coap_binary_t *asn1_pub = NULL;
   coap_binary_t *asn1_temp;
   int is_pkcs8 = 0;
+  coap_dtls_key_t key;
 
-  if (!setup_data)
-    return 0;
-  if (setup_data->version != COAP_DTLS_PKI_SETUP_VERSION)
-    return 0;
   if (!setup_data->is_rpk_not_cert) {
     coap_log_warn("Only RPK, not full PKI is supported\n");
     return 0;
   }
   if (!ctx)
     return 0;
+
   t_context = (coap_tiny_context_t *)ctx->dtls_context;
   if (!t_context)
     return 0;
@@ -1223,56 +1337,64 @@ coap_dtls_context_set_pki(coap_context_t *ctx,
   }
   t_context->setup_data = *setup_data;
 
-  /* All should be RPK only now */
-  switch (setup_data->pki_key.key_type) {
-  case COAP_PKI_KEY_PEM:
-    coap_log_warn("RPK keys cannot be in COAP_PKI_KEY_PEM format\n");
-    break;
-  case COAP_PKI_KEY_PEM_BUF:
-    if (setup_data->pki_key.key.pem_buf.public_cert &&
-        setup_data->pki_key.key.pem_buf.public_cert[0] &&
-        setup_data->pki_key.key.pem_buf.private_key &&
-        setup_data->pki_key.key.pem_buf.private_key[0]) {
+  /* Map over to the new define format to save code duplication */
+  coap_dtls_map_key_type_to_define(setup_data, &key);
+
+  assert(key.key_type == COAP_PKI_KEY_DEFINE);
+
+  /*
+   * Configure the Private Key
+   */
+  if (key.key.define.private_key.u_byte &&
+      key.key.define.private_key.u_byte[0]) {
+    switch (key.key.define.private_key_def) {
+    case COAP_PKI_KEY_DEF_RPK_BUF: /* define private key */
       /* Need to take PEM memory information and convert to binary */
       asn1_priv = pem_decode_mem_asn1("-----BEGIN EC PRIVATE KEY-----",
-                                      setup_data->pki_key.key.pem_buf.private_key);
+                                      key.key.define.private_key.u_byte);
       if (!asn1_priv) {
         asn1_priv = pem_decode_mem_asn1("-----BEGIN PRIVATE KEY-----",
-                                        setup_data->pki_key.key.pem_buf.private_key);
+                                        key.key.define.private_key.u_byte);
         if (!asn1_priv) {
-          coap_log_info("Private Key (RPK) invalid\n");
-          return 0;
+          return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                        COAP_DEFINE_FAIL_BAD,
+                                        &key, role, 0);
         }
         asn1_temp = ec_abstract_pkcs8_asn1(asn1_priv->s, asn1_priv->length);
         if (!asn1_temp) {
-          coap_log_info("PKCS#8 Private Key (RPK) invalid\n");
+          coap_log_info("*** setup_pki: (D)TLS: PKCS#8 Private Key (RPK) invalid\n");
           coap_delete_binary(asn1_priv);
-          return 0;
+          return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                        COAP_DEFINE_FAIL_BAD,
+                                        &key, role, 0);
         }
         coap_delete_binary(asn1_priv);
         asn1_priv = asn1_temp;
         is_pkcs8 = 1;
       }
-      asn1_pub = pem_decode_mem_asn1(
-                     "-----BEGIN PUBLIC KEY-----",
-                     setup_data->pki_key.key.pem_buf.public_cert);
+      asn1_pub = pem_decode_mem_asn1("-----BEGIN PUBLIC KEY-----",
+                                     key.key.define.public_cert.u_byte);
       if (!asn1_pub) {
         asn1_pub = pem_decode_mem_asn1("-----BEGIN EC PRIVATE KEY-----",
-                                       setup_data->pki_key.key.pem_buf.private_key);
+                                       key.key.define.private_key.u_byte);
         if (!asn1_pub) {
           asn1_pub = pem_decode_mem_asn1("-----BEGIN PRIVATE KEY-----",
-                                         setup_data->pki_key.key.pem_buf.private_key);
+                                         key.key.define.private_key.u_byte);
           if (!asn1_pub) {
-            coap_log_info("Public Key (RPK) invalid\n");
+            coap_log_info("*** setup_pki: (D)TLS: Public Key (RPK) invalid\n");
             coap_delete_binary(asn1_priv);
-            return 0;
+            return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                          COAP_DEFINE_FAIL_BAD,
+                                          &key, role, 0);
           }
           asn1_temp = ec_abstract_pkcs8_asn1(asn1_pub->s, asn1_pub->length);
           if (!asn1_temp) {
-            coap_log_info("PKCS#8 Private Key (RPK) invalid\n");
+            coap_log_info("*** setup_pki: (D)TLS: PKCS#8 Private Key (RPK) invalid\n");
             coap_delete_binary(asn1_priv);
             coap_delete_binary(asn1_pub);
-            return 0;
+            return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                          COAP_DEFINE_FAIL_BAD,
+                                          &key, role, 0);
           }
           coap_delete_binary(asn1_pub);
           asn1_pub = asn1_temp;
@@ -1281,7 +1403,7 @@ coap_dtls_context_set_pki(coap_context_t *ctx,
       }
       if (!asn1_derive_keys(t_context, asn1_priv->s, asn1_priv->length,
                             asn1_pub->s, asn1_pub->length, is_pkcs8)) {
-        coap_log_info("Unable to derive Public/Private Keys\n");
+        coap_log_info("*** setup_pki: (D)TLS: Unable to derive Public/Private Keys\n");
         coap_delete_binary(asn1_priv);
         coap_delete_binary(asn1_pub);
         return 0;
@@ -1289,66 +1411,133 @@ coap_dtls_context_set_pki(coap_context_t *ctx,
       coap_delete_binary(asn1_priv);
       coap_delete_binary(asn1_pub);
       return 1;
-    }
-    break;
-  case COAP_PKI_KEY_ASN1:
-    if (setup_data->pki_key.key.asn1.private_key &&
-        setup_data->pki_key.key.asn1.private_key_len &&
-        setup_data->pki_key.key.asn1.private_key_type == COAP_ASN1_PKEY_EC) {
-      const uint8_t *private_key = setup_data->pki_key.key.asn1.private_key;
-      size_t private_key_len = setup_data->pki_key.key.asn1.private_key_len;
+      break;
+    case COAP_PKI_KEY_DEF_DER_BUF: /* define private key */
+      if (key.key.define.private_key_len > 0 &&
+          key.key.define.private_key_type == COAP_ASN1_PKEY_EC) {
+        const uint8_t *private_key = key.key.define.private_key.u_byte;
+        size_t private_key_len = key.key.define.private_key_len;
 
-      /* Check to see whether this is in pkcs8 format or not */
-      asn1_temp = ec_abstract_pkcs8_asn1(
-                      setup_data->pki_key.key.asn1.private_key,
-                      setup_data->pki_key.key.asn1.private_key_len);
-      if (asn1_temp) {
-        private_key = asn1_temp->s;
-        private_key_len = asn1_temp->length;
-        is_pkcs8 = 1;
-      }
-      /* Need to take ASN1 memory information and convert to binary */
-      if (setup_data->pki_key.key.asn1.public_cert &&
-          setup_data->pki_key.key.asn1.public_cert_len) {
-        if (!asn1_derive_keys(t_context,
-                              private_key,
-                              private_key_len,
-                              setup_data->pki_key.key.asn1.public_cert,
-                              setup_data->pki_key.key.asn1.public_cert_len,
-                              is_pkcs8)) {
-          coap_log_info("Unable to derive Public/Private Keys\n");
-          if (asn1_temp)
-            coap_delete_binary(asn1_temp);
-          return 0;
+        /* Check to see whether this is in pkcs8 format or not */
+        asn1_temp = ec_abstract_pkcs8_asn1(key.key.define.private_key.u_byte,
+                                           key.key.define.private_key_len);
+        if (asn1_temp) {
+          private_key = asn1_temp->s;
+          private_key_len = asn1_temp->length;
+          is_pkcs8 = 1;
         }
+        /* Need to take ASN1 memory information and convert to binary */
+        if (key.key.define.public_cert.u_byte &&
+            key.key.define.public_cert_len) {
+          if (!asn1_derive_keys(t_context,
+                                private_key,
+                                private_key_len,
+                                key.key.define.public_cert.u_byte,
+                                key.key.define.public_cert_len,
+                                is_pkcs8)) {
+            coap_log_info("*** setup_pki: (D)TLS: Unable to derive Public/Private Keys\n");
+            coap_delete_binary(asn1_temp);
+            return 0;
+          }
+        } else {
+          if (!asn1_derive_keys(t_context,
+                                private_key,
+                                private_key_len,
+                                private_key,
+                                private_key_len,
+                                is_pkcs8)) {
+            coap_log_info("*** setup_pki: (D)TLS: Unable to derive Public/Private Keys\n");
+            coap_delete_binary(asn1_temp);
+            return 0;
+          }
+        }
+        coap_delete_binary(asn1_temp);
+        return 1;
       } else {
-        if (!asn1_derive_keys(t_context,
-                              private_key,
-                              private_key_len,
-                              private_key,
-                              private_key_len,
-                              is_pkcs8)) {
-          coap_log_info("Unable to derive Public/Private Keys\n");
-          if (asn1_temp)
-            coap_delete_binary(asn1_temp);
-          return 0;
-        }
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, 0);
       }
-      return 1;
+      break;
+    case COAP_PKI_KEY_DEF_PEM:
+    case COAP_PKI_KEY_DEF_PEM_BUF:
+    case COAP_PKI_KEY_DEF_DER:
+    case COAP_PKI_KEY_DEF_PKCS11:
+    case COAP_PKI_KEY_DEF_PKCS11_RPK:
+    case COAP_PKI_KEY_DEF_ENGINE:
+    default:
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, 0);
     }
-    break;
-  case COAP_PKI_KEY_PKCS11:
-    coap_log_warn("RPK keys cannot be in COAP_PKI_KEY_PCKS11 format\n");
-    break;
-  default:
-    break;
+  } else {
+    return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                  COAP_DEFINE_FAIL_NONE,
+                                  &key, role, 0);
   }
+
+  /*
+   * Configure the Public Certificate / Key
+   */
+  if (key.key.define.public_cert.u_byte &&
+      key.key.define.public_cert.u_byte[0]) {
+    switch (key.key.define.public_cert_def) {
+    case COAP_PKI_KEY_DEF_RPK_BUF:
+    case COAP_PKI_KEY_DEF_DER_BUF:
+      /* done under private key */
+      break;
+    case COAP_PKI_KEY_DEF_PEM:
+    case COAP_PKI_KEY_DEF_PEM_BUF:
+    case COAP_PKI_KEY_DEF_DER:
+    case COAP_PKI_KEY_DEF_PKCS11:
+    case COAP_PKI_KEY_DEF_PKCS11_RPK:
+    case COAP_PKI_KEY_DEF_ENGINE:
+    default:
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, 0);
+    }
+  }
+
+  /*
+   * Configure the CA
+   */
+  if (key.key.define.ca.u_byte &&
+      key.key.define.ca.u_byte[0]) {
+    switch (key.key.define.ca_def) {
+    case COAP_PKI_KEY_DEF_RPK_BUF:
+    case COAP_PKI_KEY_DEF_DER_BUF:
+      /* Ignore if set */
+      break;
+    case COAP_PKI_KEY_DEF_PEM:
+    case COAP_PKI_KEY_DEF_PEM_BUF:
+    case COAP_PKI_KEY_DEF_DER:
+    case COAP_PKI_KEY_DEF_PKCS11:
+    case COAP_PKI_KEY_DEF_PKCS11_RPK:
+    case COAP_PKI_KEY_DEF_ENGINE:
+    default:
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, 0);
+    }
+  }
+
+  if (setup_data->use_cid) {
+#if (DTLS_MAX_CID_LENGTH == 0)
+    coap_log_warn("TinyDTLS has no Connection-ID support\n");
+#endif /* DTLS_MAX_CID_LENGTH == 0 */
+  }
+#if (DTLS_MAX_CID_LENGTH > 0)
+  t_context->use_cid = setup_data->use_cid;
+#endif /* DTLS_MAX_CID_LENGTH > 0 */
+  return 1;
 #else /* ! DTLS_ECC */
   (void)ctx;
   (void)setup_data;
-#endif /* ! DTLS_ECC */
+  (void)role;
   coap_log_warn("TinyDTLS not compiled with ECC support\n");
   return 0;
+#endif /* ! DTLS_ECC */
 }
 
 int
@@ -1362,13 +1551,29 @@ coap_dtls_context_set_pki_root_cas(coap_context_t *ctx COAP_UNUSED,
 
 #if COAP_CLIENT_SUPPORT
 int
-coap_dtls_context_set_cpsk(coap_context_t *coap_context COAP_UNUSED,
-                           coap_dtls_cpsk_t *setup_data
-                          ) {
+coap_dtls_context_set_cpsk(coap_context_t *coap_context,
+                           coap_dtls_cpsk_t *setup_data) {
+  coap_tiny_context_t *t_context;
+
   if (!setup_data)
     return 0;
 
+  t_context = (coap_tiny_context_t *)coap_context->dtls_context;
+  if (!t_context)
+    return 0;
+
+  if (setup_data->use_cid) {
+#if (DTLS_MAX_CID_LENGTH == 0)
+    coap_log_warn("TinyDTLS has no Connection-ID support\n");
+#endif /* DTLS_MAX_CID_LENGTH == 0 */
+  }
+#if (DTLS_MAX_CID_LENGTH > 0)
+  t_context->use_cid = setup_data->use_cid;
+#endif /* DTLS_MAX_CID_LENGTH > 0 */
 #ifdef DTLS_PSK
+  if (setup_data->ec_jpake) {
+    coap_log_warn("TinyDTLS has no EC-JPAKE support\n");
+  }
   return 1;
 #else /* ! DTLS_PSK */
   coap_log_warn("TinyDTLS not compiled with PSK support\n");
@@ -1390,6 +1595,9 @@ coap_dtls_context_set_spsk(coap_context_t *coap_context COAP_UNUSED,
     coap_log_warn("CoAP Server with TinyDTLS does not support SNI selection\n");
   }
 
+  if (setup_data->ec_jpake) {
+    coap_log_warn("TinyDTLS has no EC-JPAKE support\n");
+  }
   return 1;
 #else /* ! DTLS_PSK */
   coap_log_warn("TinyDTLS not compiled with PSK support\n");
@@ -1490,10 +1698,23 @@ int
 coap_crypto_hash(cose_alg_t alg,
                  const coap_bin_const_t *data,
                  coap_bin_const_t **hash) {
+  SHA1Context sha1_context;
+  coap_binary_t *dummy = NULL;
+
   (void)alg;
-  (void)data;
-  (void)hash;
-  return 0;
+
+  SHA1Reset(&sha1_context);
+  if (SHA1Input(&sha1_context, data->s, data->length) != shaSuccess)
+    return 0;
+  dummy = coap_new_binary(SHA1HashSize);
+  if (!dummy)
+    return 0;
+  if (SHA1Result(&sha1_context, dummy->s) != shaSuccess) {
+    coap_delete_binary(dummy);
+    return 0;
+  }
+  *hash = (coap_bin_const_t *)(dummy);
+  return 1;
 }
 #endif /* COAP_WS_SUPPORT */
 

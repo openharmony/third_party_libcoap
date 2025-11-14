@@ -1,7 +1,7 @@
 /*
  * server-coap.h -- RIOT client example
  *
- * Copyright (C) 2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2023-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -15,9 +15,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "coap_config.h"
-#include <coap3/coap.h>
 
 /* Start up the CoAP Server */
 void server_coap_init(int argc, char **argv);

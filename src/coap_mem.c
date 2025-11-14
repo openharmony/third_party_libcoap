@@ -1,6 +1,6 @@
 /* coap_mem.c -- CoAP memory handling
  *
- * Copyright (C) 2014--2015,2019--2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2014--2015,2019--2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -13,7 +13,15 @@
  * @brief Memory handling functions
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
+
+#ifndef WITH_LWIP
+#if COAP_MEMORY_TYPE_TRACK
+static int track_counts[COAP_MEM_TAG_LAST];
+static int peak_counts[COAP_MEM_TAG_LAST];
+static int fail_counts[COAP_MEM_TAG_LAST];
+#endif /* COAP_MEMORY_TYPE_TRACK */
+#endif /* ! WITH_LWIP */
 
 #if defined(RIOT_VERSION) && defined(MODULE_MEMARRAY)
 #include <memarray.h>
@@ -54,7 +62,11 @@
  * fixed-size memory blocks.
  */
 #ifndef COAP_MAX_ENDPOINTS
+#if !COAP_DISABLE_TCP
 #define COAP_MAX_ENDPOINTS          (4U)
+#else /* COAP_DISABLE_TCP */
+#define COAP_MAX_ENDPOINTS          (2U)
+#endif /* COAP_DISABLE_TCP */
 #endif /* COAP_MAX_ENDPOINTS */
 
 /**
@@ -102,12 +114,10 @@
 
 /**
  * The maximum number of nodes in retransmission queue on platforms
- * that allocate fixed-size memory blocks. The default value is
- * #COAP_MAX_ENDPOINTS * #COAP_MAX_PACKETS.
+ * that allocate fixed-size memory blocks.
  */
 #ifndef COAP_MAX_NODES
-#define COAP_MAX_NODES               \
-  ((COAP_MAX_ENDPOINTS) * (COAP_MAX_PACKETS))
+#define COAP_MAX_NODES           (COAP_MAX_PACKETS)
 #endif /* COAP_MAX_NODES */
 
 /**
@@ -120,11 +130,10 @@
 
 /**
  * The maximum number of CoAP PDUs processed in parallel on platforms
- * that allocate fixed-size memory blocks. Default is
- * #COAP_MAX_ENDPOINTS * 4.
+ * that allocate fixed-size memory blocks.
  */
 #ifndef COAP_MAX_PDUS
-#define COAP_MAX_PDUS               ((COAP_MAX_ENDPOINTS) * 4U)
+#define COAP_MAX_PDUS               (4U)
 #endif /* COAP_MAX_PDUS */
 
 /**
@@ -137,10 +146,10 @@
 
 /**
  * The maximum number of DTLS sessions on platforms that allocate
- * fixed-size memory blocks. Default is #COAP_MAX_ENDPOINTS.
+ * fixed-size memory blocks.
  */
 #ifndef COAP_MAX_SESSIONS
-#define COAP_MAX_SESSIONS           (COAP_MAX_ENDPOINTS)
+#define COAP_MAX_SESSIONS           (4U)
 #endif /* COAP_MAX_CONTEXTS */
 
 /**
@@ -269,6 +278,7 @@ static memarray_t resource_storage;
 
 #ifdef COAP_WITH_LIBTINYDTLS
 #undef PACKAGE_BUGREPORT
+#undef PACKAGE_URL
 #include <session.h>
 static session_t dtls_storage_data[COAP_MAX_DTLS_SESSIONS];
 static memarray_t dtls_storage;
@@ -413,7 +423,7 @@ coap_malloc_type(coap_memory_tag_t type, size_t size) {
 
   if (size > container->size) {
     coap_log_warn("coap_malloc_type: Requested memory exceeds maximum object "
-                  "size (type %d, size %zu, max %d)\n",
+                  "size (type %d, size %zu, max %zd)\n",
                   type, size, container->size);
     return NULL;
   }
@@ -422,11 +432,26 @@ coap_malloc_type(coap_memory_tag_t type, size_t size) {
   if (!ptr)
     coap_log_warn("coap_malloc_type: Failure (no free blocks) for type %d\n",
                   type);
+#if COAP_MEMORY_TYPE_TRACK
+  assert(type < COAP_MEM_TAG_LAST);
+  if (ptr) {
+    track_counts[type]++;
+    if (track_counts[type] > peak_counts[type])
+      peak_counts[type] = track_counts[type];
+  } else {
+    fail_counts[type]++;
+  }
+#endif /* COAP_MEMORY_TYPE_TRACK */
   return ptr;
 }
 
 void
 coap_free_type(coap_memory_tag_t type, void *object) {
+#if COAP_MEMORY_TYPE_TRACK
+  assert(type < COAP_MEM_TAG_LAST);
+  if (object)
+    track_counts[type]--;
+#endif /* COAP_MEMORY_TYPE_TRACK */
   if (object != NULL)
     memarray_free(get_container(type), object);
 }
@@ -440,7 +465,7 @@ coap_realloc_type(coap_memory_tag_t type, void *p, size_t size) {
   if (p) {
     if (size > container->size) {
       coap_log_warn("coap_realloc_type: Requested memory exceeds maximum object "
-                    "size (type %d, size %zu, max %d)\n",
+                    "size (type %d, size %zu, max %zd)\n",
                     type, size, container->size);
       return NULL;
     }
@@ -451,10 +476,78 @@ coap_realloc_type(coap_memory_tag_t type, void *p, size_t size) {
     return p;
   }
   return coap_malloc_type(type, size);
-}
-#else /* ! RIOT_VERSION */
 
-#if defined(HAVE_MALLOC) || defined(__MINGW32__)
+}
+#else /* ! RIOT_VERSION && ! MODULE_MEMARRAY */
+
+#if defined(__ZEPHYR__)
+
+#include <zephyr/kernel.h>
+
+void
+coap_memory_init(void) {
+}
+
+void *
+coap_malloc_type(coap_memory_tag_t type, size_t size) {
+  void *ptr;
+
+  (void)type;
+  ptr = k_malloc(size);
+#if COAP_MEMORY_TYPE_TRACK
+  assert(type < COAP_MEM_TAG_LAST);
+  if (ptr) {
+    track_counts[type]++;
+    if (track_counts[type] > peak_counts[type])
+      peak_counts[type] = track_counts[type];
+  } else {
+    fail_counts[type]++;
+  }
+#endif /* COAP_MEMORY_TYPE_TRACK */
+  return ptr;
+}
+
+void *
+coap_realloc_type(coap_memory_tag_t type, void *p, size_t size) {
+  void *ptr;
+
+  (void)type;
+#if KERNEL_VERSION_NUMBER >= 0x30700
+  ptr = k_realloc(p, size);
+#else /* KERNEL_VERSION_NUMBER < 0x30700 */
+  if (!p) {
+    ptr = k_malloc(size);
+  } else {
+    /* Unfortunately do not know original size of p to take a copy of it */
+    ptr = NULL;
+  }
+#endif /* KERNEL_VERSION_NUMBER < 0x30700 */
+#if COAP_MEMORY_TYPE_TRACK
+  if (ptr) {
+    assert(type < COAP_MEM_TAG_LAST);
+    if (!p)
+      track_counts[type]++;
+    if (track_counts[type] > peak_counts[type])
+      peak_counts[type] = track_counts[type];
+  } else {
+    fail_counts[type]++;
+  }
+#endif /* COAP_MEMORY_TYPE_TRACK */
+  return ptr;
+}
+
+void
+coap_free_type(coap_memory_tag_t type, void *p) {
+  (void)type;
+#if COAP_MEMORY_TYPE_TRACK
+  assert(type < COAP_MEM_TAG_LAST);
+  if (p)
+    track_counts[type]--;
+#endif /* COAP_MEMORY_TYPE_TRACK */
+  k_free(p);
+}
+
+#elif defined(HAVE_MALLOC) || defined(__MINGW32__)
 #include <stdlib.h>
 
 void
@@ -463,23 +556,55 @@ coap_memory_init(void) {
 
 void *
 coap_malloc_type(coap_memory_tag_t type, size_t size) {
+  void *ptr;
+
   (void)type;
-  return malloc(size);
+  ptr = malloc(size);
+#if COAP_MEMORY_TYPE_TRACK
+  assert(type < COAP_MEM_TAG_LAST);
+  if (ptr) {
+    track_counts[type]++;
+    if (track_counts[type] > peak_counts[type])
+      peak_counts[type] = track_counts[type];
+  } else {
+    fail_counts[type]++;
+  }
+#endif /* COAP_MEMORY_TYPE_TRACK */
+  return ptr;
 }
 
 void *
 coap_realloc_type(coap_memory_tag_t type, void *p, size_t size) {
+  void *ptr;
+
   (void)type;
-  return realloc(p, size);
+  ptr = realloc(p, size);
+#if COAP_MEMORY_TYPE_TRACK
+  if (ptr) {
+    assert(type < COAP_MEM_TAG_LAST);
+    if (!p)
+      track_counts[type]++;
+    if (track_counts[type] > peak_counts[type])
+      peak_counts[type] = track_counts[type];
+  } else {
+    fail_counts[type]++;
+  }
+#endif /* COAP_MEMORY_TYPE_TRACK */
+  return ptr;
 }
 
 void
 coap_free_type(coap_memory_tag_t type, void *p) {
   (void)type;
+#if COAP_MEMORY_TYPE_TRACK
+  assert(type < COAP_MEM_TAG_LAST);
+  if (p)
+    track_counts[type]--;
+#endif /* COAP_MEMORY_TYPE_TRACK */
   free(p);
 }
 
-#else /* ! HAVE_MALLOC  && !__MINGW32__ */
+#else /* ! HAVE_MALLOC  && !__MINGW32__ && !__ZEPHYR__*/
 
 #ifdef WITH_CONTIKI
 #include "lib/heapmem.h"
@@ -490,20 +615,105 @@ coap_memory_init(void) {
 
 void *
 coap_malloc_type(coap_memory_tag_t type, size_t size) {
-  return heapmem_alloc(size);
+  void *ptr = heapmem_alloc(size);
+
+#if COAP_MEMORY_TYPE_TRACK
+  assert(type < COAP_MEM_TAG_LAST);
+  if (ptr) {
+    track_counts[type]++;
+    if (track_counts[type] > peak_counts[type])
+      peak_counts[type] = track_counts[type];
+  } else {
+    fail_counts[type]++;
+  }
+#endif /* COAP_MEMORY_TYPE_TRACK */
+  return ptr;
 }
 
 void *
 coap_realloc_type(coap_memory_tag_t type, void *p, size_t size) {
-  return heapmem_realloc(p, size);
+  void *ptr = heapmem_realloc(p, size);
+#if COAP_MEMORY_TYPE_TRACK
+  if (ptr) {
+    assert(type < COAP_MEM_TAG_LAST);
+    if (!p)
+      track_counts[type]++;
+    if (track_counts[type] > peak_counts[type])
+      peak_counts[type] = track_counts[type];
+  } else {
+    fail_counts[type]++;
+  }
+#endif /* COAP_MEMORY_TYPE_TRACK */
+  return ptr;
 }
 
 void
 coap_free_type(coap_memory_tag_t type, void *ptr) {
+#if COAP_MEMORY_TYPE_TRACK
+  assert(type < COAP_MEM_TAG_LAST);
+  if (ptr)
+    track_counts[type]--;
+#endif /* COAP_MEMORY_TYPE_TRACK */
   heapmem_free(ptr);
 }
+
 #endif /* WITH_CONTIKI */
 
 #endif /* ! HAVE_MALLOC */
 
 #endif /* ! RIOT_VERSION */
+
+#ifndef WITH_LWIP
+#define MAKE_CASE(n) case n: name = #n; break
+void
+coap_dump_memory_type_counts(coap_log_t level) {
+#if COAP_MEMORY_TYPE_TRACK
+  int i;
+
+  coap_log(level, "*  Memory type counts\n");
+  for (i = 0; i < COAP_MEM_TAG_LAST; i++) {
+    const char *name = "?";
+
+
+    switch (i) {
+      MAKE_CASE(COAP_STRING);
+      MAKE_CASE(COAP_ATTRIBUTE_NAME);
+      MAKE_CASE(COAP_ATTRIBUTE_VALUE);
+      MAKE_CASE(COAP_PACKET);
+      MAKE_CASE(COAP_NODE);
+      MAKE_CASE(COAP_CONTEXT);
+      MAKE_CASE(COAP_ENDPOINT);
+      MAKE_CASE(COAP_PDU);
+      MAKE_CASE(COAP_PDU_BUF);
+      MAKE_CASE(COAP_RESOURCE);
+      MAKE_CASE(COAP_RESOURCEATTR);
+      MAKE_CASE(COAP_DTLS_SESSION);
+      MAKE_CASE(COAP_SESSION);
+      MAKE_CASE(COAP_OPTLIST);
+      MAKE_CASE(COAP_CACHE_KEY);
+      MAKE_CASE(COAP_CACHE_ENTRY);
+      MAKE_CASE(COAP_LG_XMIT);
+      MAKE_CASE(COAP_LG_CRCV);
+      MAKE_CASE(COAP_LG_SRCV);
+      MAKE_CASE(COAP_DIGEST_CTX);
+      MAKE_CASE(COAP_SUBSCRIPTION);
+      MAKE_CASE(COAP_DTLS_CONTEXT);
+      MAKE_CASE(COAP_OSCORE_COM);
+      MAKE_CASE(COAP_OSCORE_SEN);
+      MAKE_CASE(COAP_OSCORE_REC);
+      MAKE_CASE(COAP_OSCORE_EX);
+      MAKE_CASE(COAP_OSCORE_EP);
+      MAKE_CASE(COAP_OSCORE_BUF);
+      MAKE_CASE(COAP_COSE);
+    case COAP_MEM_TAG_LAST:
+    default:
+      break;
+    }
+    coap_log(level, "*    %-20s in-use %3d peak %3d failed %2d\n",
+             name, track_counts[i], peak_counts[i], fail_counts[i]);
+  }
+#else /* COAP_MEMORY_TYPE_TRACK */
+  (void)level;
+#endif /* COAP_MEMORY_TYPE_TRACK */
+}
+#endif /* !WITH_LWIP */

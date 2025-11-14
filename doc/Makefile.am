@@ -1,7 +1,7 @@
 # doc/Makefile.am
 #
 # Copyright (C) 2015-2018 Carsten Schoenert <c.schoenert@t-online.de>
-#               2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+#               2018-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
@@ -82,10 +82,10 @@ man-page-build: upg-page-build man-page-start
 	##
 	for FILE in $${MAN_FILES} ; do \
 		BASE=`basename $${FILE} | cut -d. -f 1` ;\
-		MANUAL=`egrep -B 1 "^====" $${FILE} | head -1` ;\
-		SUMMARY=`egrep -B 2 "^SYNOPSIS" $${FILE} | ${SED} 's/coap-//g' | cut -d\- -f2 | cut -c2- | head -1` ;\
+		MANUAL=`${EGREP} -B 1 "^====" $${FILE} | head -1` ;\
+		SUMMARY=`${EGREP} -B 2 "^SYNOPSIS" $${FILE} | ${SED} 's/coap-//g' | cut -d\- -f2 | cut -c2- | head -1` ;\
 		if [ -z "$${SUMMARY}" ] ; then \
-			SUMMARY=`egrep -B 2 "^DESCRIPTION" $${FILE} | ${SED} 's/coap-//g' | cut -d\- -f2 | cut -c2- | head -1` ;\
+			SUMMARY=`${EGREP} -B 2 "^DESCRIPTION" $${FILE} | ${SED} 's/coap-//g' | cut -d\- -f2 | cut -c2- | head -1` ;\
 		fi ;\
 		##
 		## Fix and copy .html file across
@@ -126,14 +126,18 @@ man-page-build: upg-page-build man-page-start
 	echo '     <tab  type="usergroup" visible="yes" url="@ref man_individual" title="Individual Man Pages">' >> $(top_builddir)/doc/insert_file ;\
 	for FILE in $${MAN3_FILES} ; do \
 		BASE=`basename $${FILE} | cut -d. -f 1` ;\
-		LIST=`${SED} -ne '/^NAME/,/^SYNOPSIS/p;/^SYNOPSIS/q' $${FILE} | ${SED} -ne '/coap_/{ s/ *, *//g ; p }' | egrep -v "^$${BASE}$$"` ;\
+		LIST=`${SED} -ne '/^NAME/,/^SYNOPSIS/p;/^SYNOPSIS/q' $${FILE} | ${SED} -ne '/coap_/{ s/ *, *//g ; p }' | ${EGREP} -v "^$${BASE}$$"` ;\
 		for ENTRY in $${LIST} ; do \
 			MANUAL="$${ENTRY}(3)" ;\
 			## Build the manual insert page
 			echo "/// @page man_$${ENTRY} $${MANUAL}" > $(top_builddir)/doc/man_tmp/$${MANUAL}.dox ;\
 			echo "/// @htmlinclude $${ENTRY}.html $${MANUAL}" >> $(top_builddir)/doc/man_tmp/$${MANUAL}.dox ;\
 			## Create html file
-			cat $(top_builddir)/man/$${BASE}.html | ${SED} "s/Function: $${ENTRY}(/<a class=\"anchor\" id=\"$${ENTRY}\"><\/a>\0/" > $(top_builddir)/doc/man_html/$${ENTRY}.html ;\
+			cat $(top_builddir)/man/$${BASE}.html |\
+			  ${SED} "s/Function: $${ENTRY}(/<a class=\"anchor\" id=\"$${ENTRY}\"><\/a>\0/" |\
+			  ${SED} "s/Structure $${ENTRY}</<a class=\"anchor\" id=\"$${ENTRY}\"><\/a>\0/" |\
+			  ${SED} "s/SECTION: [A-Za-z /]*: $${ENTRY}</<a class=\"anchor\" id=\"$${ENTRY}\"><\/a>\0/" \
+			  > $(top_builddir)/doc/man_html/$${ENTRY}.html ;\
 			## Update scratch_insert_file for sorting later
 			echo "$${ENTRY}" >> $(top_builddir)/doc/scratch_insert_file ;\
 		done ;\

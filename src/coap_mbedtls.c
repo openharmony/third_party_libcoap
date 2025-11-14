@@ -1,8 +1,8 @@
 /*
  * coap_mbedtls.c -- Mbed TLS Datagram Transport Layer Support for libcoap
  *
- * Copyright (C) 2019-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
- *               2019 Jitin George <jitin@espressif.com>
+ * Copyright (C) 2019-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
+ *               2019      Jitin George <jitin@espressif.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -32,7 +32,7 @@
  *
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
 #ifdef COAP_WITH_LIBMBEDTLS
 
@@ -76,6 +76,9 @@
 #if defined(ESPIDF_VERSION) && defined(CONFIG_MBEDTLS_DEBUG)
 #include <mbedtls/esp_debug.h>
 #endif /* ESPIDF_VERSION && CONFIG_MBEDTLS_DEBUG */
+#if defined(MBEDTLS_PSA_CRYPTO_C)
+#include <psa/crypto.h>
+#endif /* MBEDTLS_PSA_CRYPTO_C */
 
 #define mbedtls_malloc(a) malloc(a)
 #define mbedtls_realloc(a,b) realloc(a,b)
@@ -130,6 +133,7 @@ typedef struct coap_mbedtls_env_t {
   int established;
   int sent_alert;
   int seen_client_hello;
+  int ec_jpake;
   coap_tick_t last_timeout;
   unsigned int retry_scalar;
   coap_ssl_t coap_ssl_data;
@@ -162,6 +166,7 @@ typedef struct coap_mbedtls_context_t {
 typedef enum coap_enc_method_t {
   COAP_ENC_PSK,
   COAP_ENC_PKI,
+  COAP_ENC_ECJPAKE,
 } coap_enc_method_t;
 
 #ifndef MBEDTLS_2_X_COMPAT
@@ -170,7 +175,7 @@ typedef enum coap_enc_method_t {
  */
 static int
 coap_rng(void *ctx COAP_UNUSED, unsigned char *buf, size_t len) {
-  return coap_prng(buf, len) ? 0 : MBEDTLS_ERR_CTR_DRBG_ENTROPY_SOURCE_FAILED;
+  return coap_prng_lkd(buf, len) ? 0 : MBEDTLS_ERR_CTR_DRBG_ENTROPY_SOURCE_FAILED;
 }
 #endif /* MBEDTLS_2_X_COMPAT */
 
@@ -236,9 +241,16 @@ coap_dgram_write(void *ctx, const unsigned char *send_buffer,
     result = (int)c_session->sock.lfunc[COAP_LAYER_TLS].l_write(c_session,
                                                                 send_buffer, send_buffer_length);
     if (result != (ssize_t)send_buffer_length) {
+      int keep_errno = errno;
+
       coap_log_warn("coap_netif_dgrm_write failed (%zd != %zu)\n",
                     result, send_buffer_length);
-      result = 0;
+      errno = keep_errno;
+      if (result < 0) {
+        return -1;
+      } else {
+        result = 0;
+      }
     } else if (m_env) {
       coap_tick_t now;
       coap_ticks(&now);
@@ -415,12 +427,19 @@ cert_verify_callback_mbedtls(void *data, mbedtls_x509_crt *crt,
                       "Self-signed",
                       cn ? cn : "?", depth);
       }
+    } else if (self_signed) {
+      if (!setup_data->verify_peer_cert) {
+        *flags &= ~MBEDTLS_X509_BADCERT_NOT_TRUSTED;
+        coap_log_info("   %s: %s: overridden: '%s' depth %d\n",
+                      coap_session_str(c_session),
+                      "Self-signed", cn ? cn : "?", depth);
+      }
     } else {
       if (!setup_data->verify_peer_cert) {
         *flags &= ~MBEDTLS_X509_BADCERT_NOT_TRUSTED;
         coap_log_info("   %s: %s: overridden: '%s' depth %d\n",
                       coap_session_str(c_session),
-                      "The certificate's CA does not match", cn ? cn : "?", depth);
+                      "The certificate's CA is not trusted", cn ? cn : "?", depth);
       }
     }
   }
@@ -457,13 +476,17 @@ cert_verify_callback_mbedtls(void *data, mbedtls_x509_crt *crt,
     *flags &= ~MBEDTLS_X509_BADCERT_CN_MISMATCH;
   }
   if (setup_data->validate_cn_call_back) {
-    if (!setup_data->validate_cn_call_back(cn,
-                                           crt->raw.p,
-                                           crt->raw.len,
-                                           c_session,
-                                           depth,
-                                           *flags == 0,
-                                           setup_data->cn_call_back_arg)) {
+    int ret;
+
+    coap_lock_callback_ret(ret, c_session->context,
+                           setup_data->validate_cn_call_back(cn,
+                                                             crt->raw.p,
+                                                             crt->raw.len,
+                                                             c_session,
+                                                             depth,
+                                                             *flags == 0,
+                                                             setup_data->cn_call_back_arg));
+    if (!ret) {
       *flags |= MBEDTLS_X509_BADCERT_CN_MISMATCH;
     }
   }
@@ -502,113 +525,60 @@ setup_pki_credentials(mbedtls_x509_crt *cacert,
                       coap_session_t *c_session,
                       coap_dtls_pki_t *setup_data,
                       coap_dtls_role_t role) {
+  coap_dtls_key_t key;
   int ret;
+  int done_private_key = 0;
+  int done_public_cert = 0;
+  uint8_t *buffer;
+  size_t length;
 
-  if (setup_data->is_rpk_not_cert) {
-    coap_log_err("RPK Support not available in Mbed TLS\n");
-    return -1;
-  }
-  switch (setup_data->pki_key.key_type) {
-  case COAP_PKI_KEY_PEM:
-    if (setup_data->pki_key.key.pem.public_cert &&
-        setup_data->pki_key.key.pem.public_cert[0] &&
-        setup_data->pki_key.key.pem.private_key &&
-        setup_data->pki_key.key.pem.private_key[0]) {
+  /* Map over to the new define format to save code duplication */
+  coap_dtls_map_key_type_to_define(setup_data, &key);
 
-      mbedtls_x509_crt_init(public_cert);
+  assert(key.key_type == COAP_PKI_KEY_DEFINE);
+
+  /*
+   * Configure the Private Key
+   */
+  if (key.key.define.private_key.u_byte &&
+      key.key.define.private_key.u_byte[0]) {
+    switch (key.key.define.private_key_def) {
+    case COAP_PKI_KEY_DEF_DER: /* define private key */
+    /* Fall Through */
+    case COAP_PKI_KEY_DEF_PEM: /* define private key */
+#if defined(MBEDTLS_FS_IO)
       mbedtls_pk_init(private_key);
-
-      ret = mbedtls_x509_crt_parse_file(public_cert,
-                                        setup_data->pki_key.key.pem.public_cert);
-      if (ret < 0) {
-        coap_log_err("mbedtls_x509_crt_parse_file returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
-      }
-
 #ifdef MBEDTLS_2_X_COMPAT
       ret = mbedtls_pk_parse_keyfile(private_key,
-                                     setup_data->pki_key.key.pem.private_key, NULL);
+                                     key.key.define.private_key.s_byte, NULL);
 #else
       ret = mbedtls_pk_parse_keyfile(private_key,
-                                     setup_data->pki_key.key.pem.private_key,
+                                     key.key.define.private_key.s_byte,
                                      NULL, coap_rng, (void *)&m_env->ctr_drbg);
 #endif /* MBEDTLS_2_X_COMPAT */
       if (ret < 0) {
-        coap_log_err("mbedtls_pk_parse_keyfile returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
       }
-
-      ret = mbedtls_ssl_conf_own_cert(&m_env->conf, public_cert, private_key);
-      if (ret < 0) {
-        coap_log_err("mbedtls_ssl_conf_own_cert returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
-      }
-    } else if (role == COAP_DTLS_ROLE_SERVER) {
-      coap_log_err("***setup_pki: (D)TLS: No Server Certificate + Private "
-                   "Key defined\n");
-      return -1;
-    }
-
-    if (setup_data->pki_key.key.pem.ca_file &&
-        setup_data->pki_key.key.pem.ca_file[0]) {
-      mbedtls_x509_crt_init(cacert);
-      ret = mbedtls_x509_crt_parse_file(cacert,
-                                        setup_data->pki_key.key.pem.ca_file);
-      if (ret < 0) {
-        coap_log_err("mbedtls_x509_crt_parse returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
-      }
-      mbedtls_ssl_conf_ca_chain(&m_env->conf, cacert, NULL);
-    }
-    break;
-  case COAP_PKI_KEY_PEM_BUF:
-    if (setup_data->pki_key.key.pem_buf.public_cert &&
-        setup_data->pki_key.key.pem_buf.public_cert_len &&
-        setup_data->pki_key.key.pem_buf.private_key &&
-        setup_data->pki_key.key.pem_buf.private_key_len) {
-      uint8_t *buffer;
-      size_t length;
-
-      mbedtls_x509_crt_init(public_cert);
+      done_private_key = 1;
+      break;
+#else /* ! MBEDTLS_FS_IO */
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, -1);
+#endif /* ! MBEDTLS_FS_IO */
+    case COAP_PKI_KEY_DEF_PEM_BUF: /* define private key */
       mbedtls_pk_init(private_key);
-
-      length = setup_data->pki_key.key.pem_buf.public_cert_len;
-      if (setup_data->pki_key.key.pem_buf.public_cert[length-1] != '\000') {
+      length = key.key.define.private_key_len;
+      if (key.key.define.private_key.u_byte[length-1] != '\000') {
         /* Need to allocate memory to add in NULL terminator */
         buffer = mbedtls_malloc(length + 1);
         if (!buffer) {
           coap_log_err("mbedtls_malloc failed\n");
-          return MBEDTLS_ERR_SSL_ALLOC_FAILED;
+          return 0;
         }
-        memcpy(buffer, setup_data->pki_key.key.pem_buf.public_cert, length);
-        buffer[length] = '\000';
-        length++;
-        ret = mbedtls_x509_crt_parse(public_cert, buffer, length);
-        mbedtls_free(buffer);
-      } else {
-        ret = mbedtls_x509_crt_parse(public_cert,
-                                     setup_data->pki_key.key.pem_buf.public_cert,
-                                     setup_data->pki_key.key.pem_buf.public_cert_len);
-      }
-      if (ret < 0) {
-        coap_log_err("mbedtls_x509_crt_parse returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
-      }
-
-      length = setup_data->pki_key.key.pem_buf.private_key_len;
-      if (setup_data->pki_key.key.pem_buf.private_key[length-1] != '\000') {
-        /* Need to allocate memory to add in NULL terminator */
-        buffer = mbedtls_malloc(length + 1);
-        if (!buffer) {
-          coap_log_err("mbedtls_malloc failed\n");
-          return MBEDTLS_ERR_SSL_ALLOC_FAILED;
-        }
-        memcpy(buffer, setup_data->pki_key.key.pem_buf.private_key, length);
+        memcpy(buffer, key.key.define.private_key.u_byte, length);
         buffer[length] = '\000';
         length++;
 #ifdef MBEDTLS_2_X_COMPAT
@@ -621,153 +591,263 @@ setup_pki_credentials(mbedtls_x509_crt *cacert,
       } else {
 #ifdef MBEDTLS_2_X_COMPAT
         ret = mbedtls_pk_parse_key(private_key,
-                                   setup_data->pki_key.key.pem_buf.private_key,
-                                   setup_data->pki_key.key.pem_buf.private_key_len, NULL, 0);
+                                   key.key.define.private_key.u_byte,
+                                   key.key.define.private_key_len, NULL, 0);
 #else
         ret = mbedtls_pk_parse_key(private_key,
-                                   setup_data->pki_key.key.pem_buf.private_key,
-                                   setup_data->pki_key.key.pem_buf.private_key_len,
+                                   key.key.define.private_key.u_byte,
+                                   key.key.define.private_key_len,
                                    NULL, 0, coap_rng, (void *)&m_env->ctr_drbg);
 #endif /* MBEDTLS_2_X_COMPAT */
       }
       if (ret < 0) {
-        coap_log_err("mbedtls_pk_parse_key returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
       }
-
-      ret = mbedtls_ssl_conf_own_cert(&m_env->conf, public_cert, private_key);
+      done_private_key = 1;
+      break;
+    case COAP_PKI_KEY_DEF_DER_BUF: /* define private key */
+      mbedtls_pk_init(private_key);
+#ifdef MBEDTLS_2_X_COMPAT
+      ret = mbedtls_pk_parse_key(private_key,
+                                 key.key.define.private_key.u_byte,
+                                 key.key.define.private_key_len, NULL, 0);
+#else
+      ret = mbedtls_pk_parse_key(private_key,
+                                 key.key.define.private_key.u_byte,
+                                 key.key.define.private_key_len, NULL, 0, coap_rng,
+                                 (void *)&m_env->ctr_drbg);
+#endif /* MBEDTLS_2_X_COMPAT */
       if (ret < 0) {
-        coap_log_err("mbedtls_ssl_conf_own_cert returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
       }
-    } else if (role == COAP_DTLS_ROLE_SERVER) {
-      coap_log_err("***setup_pki: (D)TLS: No Server Certificate + Private "
-                   "Key defined\n");
-      return -1;
+      done_private_key = 1;
+      break;
+    case COAP_PKI_KEY_DEF_RPK_BUF: /* define private key */
+    case COAP_PKI_KEY_DEF_PKCS11: /* define private key */
+    case COAP_PKI_KEY_DEF_PKCS11_RPK: /* define private key */
+    case COAP_PKI_KEY_DEF_ENGINE: /* define private key */
+    default:
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, -1);
     }
+  } else if (role == COAP_DTLS_ROLE_SERVER ||
+             (key.key.define.public_cert.u_byte &&
+              key.key.define.public_cert.u_byte[0])) {
+    return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                  COAP_DEFINE_FAIL_NONE,
+                                  &key, role, -1);
+  }
 
-    if (setup_data->pki_key.key.pem_buf.ca_cert &&
-        setup_data->pki_key.key.pem_buf.ca_cert_len) {
-      uint8_t *buffer;
-      size_t length;
+  /*
+   * Configure the Public Certificate / Key
+   */
+  if (key.key.define.public_cert.u_byte &&
+      key.key.define.public_cert.u_byte[0]) {
+    switch (key.key.define.public_cert_def) {
+    case COAP_PKI_KEY_DEF_DER: /* define public cert */
+    /* Fall Through */
+    case COAP_PKI_KEY_DEF_PEM: /* define public cert */
+#if defined(MBEDTLS_FS_IO)
+      mbedtls_x509_crt_init(public_cert);
+      ret = mbedtls_x509_crt_parse_file(public_cert,
+                                        key.key.define.public_cert.s_byte);
+      if (ret < 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      done_public_cert = 1;
+      break;
+#else /* ! MBEDTLS_FS_IO */
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, -1);
+#endif /* ! MBEDTLS_FS_IO */
+    case COAP_PKI_KEY_DEF_PEM_BUF: /* define public cert */
+      mbedtls_x509_crt_init(public_cert);
 
-      mbedtls_x509_crt_init(cacert);
-      length = setup_data->pki_key.key.pem_buf.ca_cert_len;
-      if (setup_data->pki_key.key.pem_buf.ca_cert[length-1] != '\000') {
+      length = key.key.define.public_cert_len;
+      if (key.key.define.public_cert.u_byte[length-1] != '\000') {
         /* Need to allocate memory to add in NULL terminator */
         buffer = mbedtls_malloc(length + 1);
         if (!buffer) {
           coap_log_err("mbedtls_malloc failed\n");
-          return MBEDTLS_ERR_SSL_ALLOC_FAILED;
+          return 0;
         }
-        memcpy(buffer, setup_data->pki_key.key.pem_buf.ca_cert, length);
+        memcpy(buffer, key.key.define.public_cert.u_byte, length);
+        buffer[length] = '\000';
+        length++;
+        ret = mbedtls_x509_crt_parse(public_cert, buffer, length);
+        mbedtls_free(buffer);
+      } else {
+        ret = mbedtls_x509_crt_parse(public_cert,
+                                     key.key.define.public_cert.u_byte,
+                                     key.key.define.public_cert_len);
+      }
+      if (ret < 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      done_public_cert = 1;
+      break;
+    case COAP_PKI_KEY_DEF_RPK_BUF: /* define public cert */
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, -1);
+    case COAP_PKI_KEY_DEF_DER_BUF: /* define public cert */
+      mbedtls_x509_crt_init(public_cert);
+      ret = mbedtls_x509_crt_parse(public_cert,
+                                   key.key.define.public_cert.u_byte,
+                                   key.key.define.public_cert_len);
+      if (ret < 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      done_public_cert = 1;
+      break;
+    case COAP_PKI_KEY_DEF_PKCS11: /* define public cert */
+    case COAP_PKI_KEY_DEF_PKCS11_RPK: /* define public cert */
+    case COAP_PKI_KEY_DEF_ENGINE: /* define public cert */
+    default:
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, -1);
+    }
+  } else if (role == COAP_DTLS_ROLE_SERVER ||
+             (key.key.define.private_key.u_byte &&
+              key.key.define.private_key.u_byte[0])) {
+    return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                  COAP_DEFINE_FAIL_NONE,
+                                  &key, role, -1);
+  }
+
+  if (done_private_key && done_public_cert) {
+    ret = mbedtls_ssl_conf_own_cert(&m_env->conf, public_cert, private_key);
+    if (ret < 0) {
+      coap_log_err("mbedtls_ssl_conf_own_cert returned -0x%x: '%s'\n",
+                   -ret, get_error_string(ret));
+      return 0;
+    }
+  }
+
+  /*
+   * Configure the CA
+   */
+  if (
+#if MBEDTLS_VERSION_NUMBER < 0x03060000
+      setup_data->check_common_ca &&
+#endif /* MBEDTLS_VERSION_NUMBER < 0x03060000 */
+      key.key.define.ca.u_byte &&
+      key.key.define.ca.u_byte[0]) {
+    switch (key.key.define.ca_def) {
+    case COAP_PKI_KEY_DEF_DER: /* define ca */
+    /* Fall Through */
+    case COAP_PKI_KEY_DEF_PEM:
+#if defined(MBEDTLS_FS_IO)
+      mbedtls_x509_crt_init(cacert);
+      ret = mbedtls_x509_crt_parse_file(cacert,
+                                        key.key.define.ca.s_byte);
+      if (ret < 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      mbedtls_ssl_conf_ca_chain(&m_env->conf, cacert, NULL);
+#else /* ! MBEDTLS_FS_IO */
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, -1);
+#endif /* ! MBEDTLS_FS_IO */
+      break;
+    case COAP_PKI_KEY_DEF_PEM_BUF: /* define ca */
+      mbedtls_x509_crt_init(cacert);
+      length = key.key.define.ca_len;
+      if (key.key.define.ca.u_byte[length-1] != '\000') {
+        /* Need to allocate memory to add in NULL terminator */
+        buffer = mbedtls_malloc(length + 1);
+        if (!buffer) {
+          coap_log_err("mbedtls_malloc failed\n");
+          return 0;
+        }
+        memcpy(buffer, key.key.define.ca.u_byte, length);
         buffer[length] = '\000';
         length++;
         ret = mbedtls_x509_crt_parse(cacert, buffer, length);
         mbedtls_free(buffer);
       } else {
         ret = mbedtls_x509_crt_parse(cacert,
-                                     setup_data->pki_key.key.pem_buf.ca_cert,
-                                     setup_data->pki_key.key.pem_buf.ca_cert_len);
+                                     key.key.define.ca.u_byte,
+                                     key.key.define.ca_len);
       }
       if (ret < 0) {
-        coap_log_err("mbedtls_x509_crt_parse returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
       }
       mbedtls_ssl_conf_ca_chain(&m_env->conf, cacert, NULL);
-    }
-    break;
-  case COAP_PKI_KEY_ASN1:
-    if (setup_data->pki_key.key.asn1.public_cert &&
-        setup_data->pki_key.key.asn1.public_cert_len &&
-        setup_data->pki_key.key.asn1.private_key &&
-        setup_data->pki_key.key.asn1.private_key_len > 0) {
-
-      mbedtls_x509_crt_init(public_cert);
-      mbedtls_pk_init(private_key);
-      ret = mbedtls_x509_crt_parse(public_cert,
-                                   (const unsigned char *)setup_data->pki_key.key.asn1.public_cert,
-                                   setup_data->pki_key.key.asn1.public_cert_len);
-      if (ret < 0) {
-        coap_log_err("mbedtls_x509_crt_parse returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
-      }
-
-#ifdef MBEDTLS_2_X_COMPAT
-      ret = mbedtls_pk_parse_key(private_key,
-                                 (const unsigned char *)setup_data->pki_key.key.asn1.private_key,
-                                 setup_data->pki_key.key.asn1.private_key_len, NULL, 0);
-#else
-      ret = mbedtls_pk_parse_key(private_key,
-                                 (const unsigned char *)setup_data->pki_key.key.asn1.private_key,
-                                 setup_data->pki_key.key.asn1.private_key_len, NULL, 0, coap_rng,
-                                 (void *)&m_env->ctr_drbg);
-#endif /* MBEDTLS_2_X_COMPAT */
-      if (ret < 0) {
-        coap_log_err("mbedtls_pk_parse_key returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
-      }
-
-      ret = mbedtls_ssl_conf_own_cert(&m_env->conf, public_cert, private_key);
-      if (ret < 0) {
-        coap_log_err("mbedtls_ssl_conf_own_cert returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
-      }
-    } else if (role == COAP_DTLS_ROLE_SERVER) {
-      coap_log_err("***setup_pki: (D)TLS: No Server Certificate + Private "
-                   "Key defined\n");
-      return -1;
-    }
-
-    if (setup_data->pki_key.key.asn1.ca_cert &&
-        setup_data->pki_key.key.asn1.ca_cert_len > 0) {
+      break;
+    case COAP_PKI_KEY_DEF_RPK_BUF: /* define ca */
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, -1);
+    case COAP_PKI_KEY_DEF_DER_BUF: /* define ca */
       mbedtls_x509_crt_init(cacert);
       ret = mbedtls_x509_crt_parse(cacert,
-                                   (const unsigned char *)setup_data->pki_key.key.asn1.ca_cert,
-                                   setup_data->pki_key.key.asn1.ca_cert_len);
+                                   key.key.define.ca.u_byte,
+                                   key.key.define.ca_len);
       if (ret < 0) {
-        coap_log_err("mbedtls_x509_crt_parse returned -0x%x: '%s'\n",
-                     -ret, get_error_string(ret));
-        return ret;
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
       }
       mbedtls_ssl_conf_ca_chain(&m_env->conf, cacert, NULL);
+      break;
+    case COAP_PKI_KEY_DEF_PKCS11: /* define ca */
+    case COAP_PKI_KEY_DEF_PKCS11_RPK: /* define ca */
+    case COAP_PKI_KEY_DEF_ENGINE: /* define ca */
+    default:
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, -1);
     }
-    break;
-
-  case COAP_PKI_KEY_PKCS11:
-    coap_log_err("***setup_pki: (D)TLS: PKCS11 not currently supported\n");
-    return -1;
-
-  default:
-    coap_log_err("***setup_pki: (D)TLS: Unknown key type %d\n",
-                 setup_data->pki_key.key_type);
-    return -1;
   }
 
+  /* Add in any root CA definitons */
+
+#if defined(MBEDTLS_FS_IO)
   if (m_context->root_ca_file) {
     ret = mbedtls_x509_crt_parse_file(cacert, m_context->root_ca_file);
     if (ret < 0) {
-      coap_log_err("mbedtls_x509_crt_parse returned -0x%x: '%s'\n",
-                   -ret, get_error_string(ret));
-      return ret;
+      key.key.define.ca_def = COAP_PKI_KEY_DEF_PEM;
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_ROOT_CA,
+                                    COAP_DEFINE_FAIL_BAD,
+                                    &key, role, ret);
     }
     mbedtls_ssl_conf_ca_chain(&m_env->conf, cacert, NULL);
   }
   if (m_context->root_ca_path) {
     ret = mbedtls_x509_crt_parse_file(cacert, m_context->root_ca_path);
     if (ret < 0) {
-      coap_log_err("mbedtls_x509_crt_parse returned -0x%x: '%s'\n",
-                   -ret, get_error_string(ret));
-      return ret;
+      key.key.define.ca_def = COAP_PKI_KEY_DEF_PEM;
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_ROOT_CA,
+                                    COAP_DEFINE_FAIL_BAD,
+                                    &key, role, ret);
     }
     mbedtls_ssl_conf_ca_chain(&m_env->conf, cacert, NULL);
   }
+#else /* ! MBEDTLS_FS_IO */
+  (void)m_context;
+  return coap_dtls_define_issue(COAP_DEFINE_KEY_ROOT_CA,
+                                COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                &key, role, -1);
+#endif /* ! MBEDTLS_FS_IO */
 
 #if defined(MBEDTLS_SSL_SRV_C)
   mbedtls_ssl_conf_cert_req_ca_list(&m_env->conf,
@@ -785,7 +865,7 @@ setup_pki_credentials(mbedtls_x509_crt *cacert,
   mbedtls_ssl_conf_verify(&m_env->conf,
                           cert_verify_callback_mbedtls, c_session);
 
-  return 0;
+  return 1;
 }
 
 #if defined(MBEDTLS_SSL_SRV_C)
@@ -801,7 +881,6 @@ pki_sni_callback(void *p_info, mbedtls_ssl_context *ssl,
   coap_mbedtls_env_t *m_env = (coap_mbedtls_env_t *)c_session->tls;
   coap_mbedtls_context_t *m_context =
       (coap_mbedtls_context_t *)c_session->context->dtls_context;
-  int ret = 0;
   char *name;
 
   name = mbedtls_malloc(name_len+1);
@@ -824,9 +903,9 @@ pki_sni_callback(void *p_info, mbedtls_ssl_context *ssl,
     coap_dtls_key_t *new_entry;
     pki_sni_entry *pki_sni_entry_list;
 
-    new_entry =
-        m_context->setup_data.validate_sni_call_back(name,
-                                                     m_context->setup_data.sni_call_back_arg);
+    coap_lock_callback_ret(new_entry, c_session->context,
+                           m_context->setup_data.validate_sni_call_back(name,
+                               m_context->setup_data.sni_call_back_arg));
     if (!new_entry) {
       mbedtls_free(name);
       return -1;
@@ -846,13 +925,13 @@ pki_sni_callback(void *p_info, mbedtls_ssl_context *ssl,
     m_context->pki_sni_entry_list[i].pki_key = *new_entry;
     sni_setup_data = m_context->setup_data;
     sni_setup_data.pki_key = *new_entry;
-    if ((ret = setup_pki_credentials(&m_context->pki_sni_entry_list[i].cacert,
-                                     &m_context->pki_sni_entry_list[i].public_cert,
-                                     &m_context->pki_sni_entry_list[i].private_key,
-                                     m_env,
-                                     m_context,
-                                     c_session,
-                                     &sni_setup_data, COAP_DTLS_ROLE_SERVER)) < 0) {
+    if (setup_pki_credentials(&m_context->pki_sni_entry_list[i].cacert,
+                              &m_context->pki_sni_entry_list[i].public_cert,
+                              &m_context->pki_sni_entry_list[i].private_key,
+                              m_env,
+                              m_context,
+                              c_session,
+                              &sni_setup_data, COAP_DTLS_ROLE_SERVER) < 0) {
       mbedtls_free(name);
       return -1;
     }
@@ -902,10 +981,10 @@ psk_sni_callback(void *p_info, mbedtls_ssl_context *ssl,
     const coap_dtls_spsk_info_t *new_entry;
     psk_sni_entry *psk_sni_entry_list;
 
-    new_entry =
-        c_session->context->spsk_setup_data.validate_sni_call_back(name,
-            c_session,
-            c_session->context->spsk_setup_data.sni_call_back_arg);
+    coap_lock_callback_ret(new_entry, c_session->context,
+                           c_session->context->spsk_setup_data.validate_sni_call_back(name,
+                               c_session,
+                               c_session->context->spsk_setup_data.sni_call_back_arg));
     if (!new_entry) {
       mbedtls_free(name);
       return -1;
@@ -970,6 +1049,9 @@ setup_server_ssl_session(coap_session_t *c_session,
     if (c_session->context->spsk_setup_data.validate_sni_call_back) {
       mbedtls_ssl_conf_sni(&m_env->conf, psk_sni_callback, c_session);
     }
+#ifdef MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED
+    m_env->ec_jpake = c_session->context->spsk_setup_data.ec_jpake;
+#endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
 #else /* MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED */
     coap_log_warn("PSK not enabled in Mbed TLS library\n");
 #endif /* MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED */
@@ -1023,7 +1105,35 @@ fail:
 #if COAP_CLIENT_SUPPORT
 static int *psk_ciphers = NULL;
 static int *pki_ciphers = NULL;
+static int *ecjpake_ciphers = NULL;
 static int processed_ciphers = 0;
+
+#if defined(MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED)
+static int
+coap_ssl_ciphersuite_uses_psk(const mbedtls_ssl_ciphersuite_t *info) {
+#if MBEDTLS_VERSION_NUMBER >= 0x03060000
+  switch (info->key_exchange) {
+  case MBEDTLS_KEY_EXCHANGE_PSK:
+  case MBEDTLS_KEY_EXCHANGE_RSA_PSK:
+  case MBEDTLS_KEY_EXCHANGE_DHE_PSK:
+  case MBEDTLS_KEY_EXCHANGE_ECDHE_PSK:
+    return 1;
+  case MBEDTLS_KEY_EXCHANGE_NONE:
+  case MBEDTLS_KEY_EXCHANGE_RSA:
+  case MBEDTLS_KEY_EXCHANGE_DHE_RSA:
+  case MBEDTLS_KEY_EXCHANGE_ECDHE_RSA:
+  case MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA:
+  case MBEDTLS_KEY_EXCHANGE_ECDH_RSA:
+  case MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA:
+  case MBEDTLS_KEY_EXCHANGE_ECJPAKE:
+  default:
+    return 0;
+  }
+#else /* MBEDTLS_VERSION_NUMBER < 0x03060000 */
+  return mbedtls_ssl_ciphersuite_uses_psk(info);
+#endif /* MBEDTLS_VERSION_NUMBER < 0x03060000 */
+}
+#endif /* defined(MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED) */
 
 static void
 set_ciphersuites(mbedtls_ssl_config *conf, coap_enc_method_t method) {
@@ -1032,6 +1142,10 @@ set_ciphersuites(mbedtls_ssl_config *conf, coap_enc_method_t method) {
     const int *base = list;
     int *psk_list;
     int *pki_list;
+#if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
+    int *ecjpake_list;
+    int ecjpake_count = 1;
+#endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
     int psk_count = 1; /* account for empty terminator */
     int pki_count = 1;
 
@@ -1039,19 +1153,29 @@ set_ciphersuites(mbedtls_ssl_config *conf, coap_enc_method_t method) {
       const mbedtls_ssl_ciphersuite_t *cur =
           mbedtls_ssl_ciphersuite_from_id(*list);
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03020000
       if (cur) {
+#if MBEDTLS_VERSION_NUMBER >= 0x03020000
         if (cur->max_tls_version < MBEDTLS_SSL_VERSION_TLS1_2) {
           /* Minimum of TLS1.2 required - skip */
         }
 #else
-      if (cur) {
         if (cur->max_minor_ver < MBEDTLS_SSL_MINOR_VERSION_3) {
           /* Minimum of TLS1.2 required - skip */
         }
 #endif /* MBEDTLS_VERSION_NUMBER >= 0x03020000 */
+#if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
+        else if (cur->key_exchange == MBEDTLS_KEY_EXCHANGE_ECJPAKE) {
+          ecjpake_count++;
+        }
+#endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
+#if MBEDTLS_VERSION_NUMBER >= 0x03060000
+        else if (cur->min_tls_version >= MBEDTLS_SSL_VERSION_TLS1_3) {
+          psk_count++;
+          pki_count++;
+        }
+#endif /* MBEDTLS_VERSION_NUMBER >= 0x03060000 */
 #if defined(MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED)
-        else if (mbedtls_ssl_ciphersuite_uses_psk(cur)) {
+        else if (coap_ssl_ciphersuite_uses_psk(cur)) {
           psk_count++;
         }
 #endif /* MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED */
@@ -1075,26 +1199,53 @@ set_ciphersuites(mbedtls_ssl_config *conf, coap_enc_method_t method) {
       psk_ciphers = NULL;
       return;
     }
+#if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
+    ecjpake_ciphers = mbedtls_malloc(ecjpake_count * sizeof(ecjpake_ciphers[0]));
+    if (ecjpake_ciphers == NULL) {
+      coap_log_err("set_ciphers: mbedtls_malloc with count %d failed\n", pki_count);
+      mbedtls_free(psk_ciphers);
+      mbedtls_free(pki_ciphers);
+      psk_ciphers = NULL;
+      pki_ciphers = NULL;
+      return;
+    }
+#endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
 
     psk_list = psk_ciphers;
     pki_list = pki_ciphers;
+#if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
+    ecjpake_list = ecjpake_ciphers;
+#endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
 
     while (*list) {
       const mbedtls_ssl_ciphersuite_t *cur =
           mbedtls_ssl_ciphersuite_from_id(*list);
-#if MBEDTLS_VERSION_NUMBER >= 0x03020000
       if (cur) {
+#if MBEDTLS_VERSION_NUMBER >= 0x03020000
         if (cur->max_tls_version < MBEDTLS_SSL_VERSION_TLS1_2) {
           /* Minimum of TLS1.2 required - skip */
         }
 #else
-      if (cur) {
         if (cur->max_minor_ver < MBEDTLS_SSL_MINOR_VERSION_3) {
           /* Minimum of TLS1.2 required - skip */
         }
 #endif /* MBEDTLS_VERSION_NUMBER >= 0x03020000 */
+#if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
+        else if (cur->key_exchange == MBEDTLS_KEY_EXCHANGE_ECJPAKE) {
+          *ecjpake_list = *list;
+          ecjpake_list++;
+        }
+#endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
+#if MBEDTLS_VERSION_NUMBER >= 0x03060000
+        else if (cur->min_tls_version >= MBEDTLS_SSL_VERSION_TLS1_3) {
+          *psk_list = *list;
+          psk_list++;
+          *pki_list = *list;
+          pki_list++;
+        }
+#endif /* MBEDTLS_VERSION_NUMBER >= 0x03060000 */
 #if defined(MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED)
-        else if (mbedtls_ssl_ciphersuite_uses_psk(cur)) {
+        else if (coap_ssl_ciphersuite_uses_psk(cur)) {
           *psk_list = *list;
           psk_list++;
         }
@@ -1111,7 +1262,20 @@ set_ciphersuites(mbedtls_ssl_config *conf, coap_enc_method_t method) {
     *pki_list = 0;
     processed_ciphers = 1;
   }
-  mbedtls_ssl_conf_ciphersuites(conf, method == COAP_ENC_PSK ? psk_ciphers : pki_ciphers);
+  switch (method) {
+  case COAP_ENC_PSK:
+    mbedtls_ssl_conf_ciphersuites(conf, psk_ciphers);
+    break;
+  case COAP_ENC_PKI:
+    mbedtls_ssl_conf_ciphersuites(conf, pki_ciphers);
+    break;
+  case COAP_ENC_ECJPAKE:
+    mbedtls_ssl_conf_ciphersuites(conf, ecjpake_ciphers);
+    break;
+  default:
+    assert(0);
+    break;
+  }
 }
 
 static int
@@ -1174,7 +1338,19 @@ setup_client_ssl_session(coap_session_t *c_session,
     }
     /* Identity Hint currently not supported in Mbed TLS so code removed */
 
+#ifdef MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED
+    if (c_session->cpsk_setup_data.ec_jpake) {
+      m_env->ec_jpake = 1;
+      set_ciphersuites(&m_env->conf, COAP_ENC_ECJPAKE);
+#if MBEDTLS_VERSION_NUMBER >= 0x03020000
+      mbedtls_ssl_conf_max_tls_version(&m_env->conf, MBEDTLS_SSL_VERSION_TLS1_2);
+#endif /* MBEDTLS_VERSION_NUMBER >= 0x03020000 */
+    } else {
+      set_ciphersuites(&m_env->conf, COAP_ENC_PSK);
+    }
+#else /* ! MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
     set_ciphersuites(&m_env->conf, COAP_ENC_PSK);
+#endif /* ! MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
 #else /* MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED */
     coap_log_warn("PSK not enabled in Mbed TLS library\n");
 #endif /* ! MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED */
@@ -1291,6 +1467,31 @@ do_mbedtls_handshake(coap_session_t *c_session,
     coap_log_debug("*  %s: Mbed TLS established\n",
                    coap_session_str(c_session));
     ret = 1;
+#ifdef MBEDTLS_SSL_DTLS_CONNECTION_ID
+#if COAP_CLIENT_SUPPORT
+    if (c_session->type == COAP_SESSION_TYPE_CLIENT &&
+        c_session->proto == COAP_PROTO_DTLS) {
+      coap_mbedtls_context_t *m_context;
+
+      m_context = (coap_mbedtls_context_t *)c_session->context->dtls_context;
+      if ((m_context->psk_pki_enabled & IS_PSK && c_session->cpsk_setup_data.use_cid) ||
+          m_context->setup_data.use_cid) {
+        unsigned char peer_cid[MBEDTLS_SSL_CID_OUT_LEN_MAX];
+        int enabled;
+        size_t peer_cid_len;
+
+        /* See whether CID was negotiated */
+        if (mbedtls_ssl_get_peer_cid(&m_env->ssl, &enabled, peer_cid, &peer_cid_len) == 0 &&
+            enabled == MBEDTLS_SSL_CID_ENABLED) {
+          c_session->negotiated_cid = 1;
+        } else {
+          coap_log_info("** %s: CID was not negotiated\n", coap_session_str(c_session));
+          c_session->negotiated_cid = 0;
+        }
+      }
+    }
+#endif /* COAP_CLIENT_SUPPORT */
+#endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
     break;
   case MBEDTLS_ERR_SSL_WANT_READ:
   case MBEDTLS_ERR_SSL_WANT_WRITE:
@@ -1352,6 +1553,26 @@ fail:
                 get_error_string(ret));
 reset:
   mbedtls_ssl_session_reset(&m_env->ssl);
+#ifdef MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED
+  if (m_env->ec_jpake) {
+    const coap_bin_const_t *psk_key;
+
+#if COAP_CLIENT_SUPPORT && COAP_SERVER_SUPPORT
+    if (c_session->type == COAP_SESSION_TYPE_CLIENT) {
+      psk_key = coap_get_session_client_psk_key(c_session);
+    } else {
+      psk_key = coap_get_session_server_psk_key(c_session);
+    }
+#elif COAP_CLIENT_SUPPORT
+    psk_key = coap_get_session_client_psk_key(c_session);
+#else /* COAP_SERVER_SUPPORT */
+    psk_key = coap_get_session_server_psk_key(c_session);
+#endif /* COAP_SERVER_SUPPORT */
+    if (psk_key) {
+      mbedtls_ssl_set_hs_ecjpake_password(&m_env->ssl, psk_key->s, psk_key->length);
+    }
+  }
+#endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
   return -1;
 }
 
@@ -1503,6 +1724,10 @@ coap_dtls_new_mbedtls_env(coap_session_t *c_session,
   mbedtls_ssl_config_init(&m_env->conf);
   mbedtls_entropy_init(&m_env->entropy);
 
+#if defined(MBEDTLS_PSA_CRYPTO_C)
+  psa_crypto_init();
+#endif /* MBEDTLS_PSA_CRYPTO_C */
+
 #if defined(ESPIDF_VERSION) && defined(CONFIG_MBEDTLS_DEBUG)
   mbedtls_esp_enable_debug_log(&m_env->conf, CONFIG_MBEDTLS_DEBUG_LEVEL);
 #endif /* ESPIDF_VERSION && CONFIG_MBEDTLS_DEBUG */
@@ -1540,26 +1765,47 @@ coap_dtls_new_mbedtls_env(coap_session_t *c_session,
                                MBEDTLS_SSL_MINOR_VERSION_3);
 #endif /* MBEDTLS_VERSION_NUMBER >= 0x03020000 */
 
-  if ((ret = mbedtls_ssl_setup(&m_env->ssl, &m_env->conf)) != 0) {
+  if (mbedtls_ssl_setup(&m_env->ssl, &m_env->conf) != 0) {
     goto fail;
   }
   if (proto == COAP_PROTO_DTLS) {
     mbedtls_ssl_set_bio(&m_env->ssl, c_session, coap_dgram_write,
                         coap_dgram_read, NULL);
 #ifdef MBEDTLS_SSL_DTLS_CONNECTION_ID
-    if (role != COAP_DTLS_ROLE_CLIENT &&
-        COAP_PROTO_NOT_RELIABLE(c_session->proto)) {
-      u_char cid[COAP_DTLS_CID_LENGTH];
-      /*
-       * Enable server DTLS CID support.
-       *
-       * Note: Set MBEDTLS_SSL_DTLS_CONNECTION_ID_COMPAT to 0 (the default)
-       * to use RFC9146 extension ID of 54, rather than the draft version -05
-       * value of 254.
-       */
-      coap_prng(cid, sizeof(cid));
-      mbedtls_ssl_set_cid(&m_env->ssl, MBEDTLS_SSL_CID_ENABLED, cid,
-                          sizeof(cid));
+    if (COAP_PROTO_NOT_RELIABLE(c_session->proto)) {
+      if (role == COAP_DTLS_ROLE_CLIENT) {
+#if COAP_CLIENT_SUPPORT
+        coap_mbedtls_context_t *m_context =
+            (coap_mbedtls_context_t *)c_session->context->dtls_context;
+
+        if ((m_context->psk_pki_enabled & IS_PSK && c_session->cpsk_setup_data.use_cid) ||
+            m_context->setup_data.use_cid) {
+          /*
+           * Enable passive DTLS CID support.
+           *
+           * Note: Set MBEDTLS_SSL_DTLS_CONNECTION_ID_COMPAT to 0 (the default)
+           * to use RFC9146 extension ID of 54, rather than the draft version -05
+           * value of 254.
+           */
+          mbedtls_ssl_set_cid(&m_env->ssl, MBEDTLS_SSL_CID_ENABLED, NULL, 0);
+        }
+#endif /* COAP_CLIENT_SUPPORT */
+      } else {
+#if COAP_SERVER_SUPPORT
+        u_char cid[COAP_DTLS_CID_LENGTH];
+        /*
+         * Enable server DTLS CID support.
+         *
+         * Note: Set MBEDTLS_SSL_DTLS_CONNECTION_ID_COMPAT to 0 (the default)
+         * to use RFC9146 extension ID of 54, rather than the draft version -05
+         * value of 254.
+         */
+        coap_prng_lkd(cid, sizeof(cid));
+        mbedtls_ssl_set_cid(&m_env->ssl, MBEDTLS_SSL_CID_ENABLED, cid,
+                            sizeof(cid));
+        c_session->client_cid = coap_new_bin_const(cid, sizeof(cid));
+#endif /* COAP_SERVER_SUPPORT */
+      }
     }
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
   }
@@ -1570,6 +1816,27 @@ coap_dtls_new_mbedtls_env(coap_session_t *c_session,
                         coap_sock_read, NULL);
   }
 #endif /* ! COAP_DISABLE_TCP */
+#ifdef MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED
+  coap_mbedtls_context_t *m_context =
+      ((coap_mbedtls_context_t *)c_session->context->dtls_context);
+  if ((m_context->psk_pki_enabled & IS_PSK) &&
+      m_env->ec_jpake) {
+    const coap_bin_const_t *psk_key;
+
+#if COAP_CLIENT_SUPPORT && COAP_SERVER_SUPPORT
+    if (role == COAP_DTLS_ROLE_CLIENT) {
+      psk_key = coap_get_session_client_psk_key(c_session);
+    } else {
+      psk_key = coap_get_session_server_psk_key(c_session);
+    }
+#elif COAP_CLIENT_SUPPORT
+    psk_key = coap_get_session_client_psk_key(c_session);
+#else /* COAP_SERVER_SUPPORT */
+    psk_key = coap_get_session_server_psk_key(c_session);
+#endif /* COAP_SERVER_SUPPORT */
+    mbedtls_ssl_set_hs_ecjpake_password(&m_env->ssl, psk_key->s, psk_key->length);
+  }
+#endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
   mbedtls_ssl_set_timer_cb(&m_env->ssl, &m_env->timer,
                            mbedtls_timing_set_delay,
                            mbedtls_timing_get_delay);
@@ -1644,6 +1911,33 @@ coap_dtls_rpk_is_supported(void) {
   return 0;
 }
 
+/*
+ * return 0 failed
+ *        1 passed
+ */
+int
+coap_dtls_cid_is_supported(void) {
+#ifdef MBEDTLS_SSL_DTLS_CONNECTION_ID
+  return 1;
+#else /* ! MBEDTLS_SSL_DTLS_CONNECTION_ID */
+  return 0;
+#endif /* ! MBEDTLS_SSL_DTLS_CONNECTION_ID */
+}
+
+#if COAP_CLIENT_SUPPORT
+int
+coap_dtls_set_cid_tuple_change(coap_context_t *c_context, uint8_t every) {
+#ifdef MBEDTLS_SSL_DTLS_CONNECTION_ID
+  c_context->testing_cids = every;
+  return 1;
+#else /* ! MBEDTLS_SSL_DTLS_CONNECTION_ID */
+  (void)c_context;
+  (void)every;
+  return 0;
+#endif /* ! MBEDTLS_SSL_DTLS_CONNECTION_ID */
+}
+#endif /* COAP_CLIENT_SUPPORT */
+
 void *
 coap_dtls_new_context(coap_context_t *c_context) {
   coap_mbedtls_context_t *m_context;
@@ -1677,6 +1971,11 @@ coap_dtls_context_set_spsk(coap_context_t *c_context,
   if (!m_context || !setup_data)
     return 0;
 
+  if (setup_data->ec_jpake) {
+#ifndef MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED
+    coap_log_warn("Mbed TLS not compiled for EC-JPAKE support\n");
+#endif /* ! MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
+  }
   m_context->psk_pki_enabled |= IS_PSK;
   return 1;
 }
@@ -1709,6 +2008,16 @@ coap_dtls_context_set_cpsk(coap_context_t *c_context,
   if (setup_data->validate_ih_call_back) {
     coap_log_warn("CoAP Client with Mbed TLS does not support Identity Hint selection\n");
   }
+  if (setup_data->ec_jpake) {
+#ifndef MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED
+    coap_log_warn("Mbed TLS not compiled for EC-JPAKE support\n");
+#endif /* ! MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
+  }
+  if (setup_data->use_cid) {
+#ifndef MBEDTLS_SSL_DTLS_CONNECTION_ID
+    coap_log_warn("Mbed TLS not compiled for Connection-ID support\n");
+#endif /* ! MBEDTLS_SSL_DTLS_CONNECTION_ID */
+  }
   m_context->psk_pki_enabled |= IS_PSK;
   return 1;
 #endif /* MBEDTLS_SSL_CLI_C */
@@ -1738,6 +2047,11 @@ coap_dtls_context_set_pki(coap_context_t *c_context,
     m_context->setup_data.allow_short_rsa_length = 1;
   }
   m_context->psk_pki_enabled |= IS_PKI;
+  if (setup_data->use_cid) {
+#ifndef MBEDTLS_SSL_DTLS_CONNECTION_ID
+    coap_log_warn("Mbed TLS not compiled for Connection-ID support\n");
+#endif /* ! MBEDTLS_SSL_DTLS_CONNECTION_ID */
+  }
   return 1;
 }
 
@@ -1834,18 +2148,7 @@ coap_dtls_new_client_session(coap_session_t *c_session) {
 
   if (m_env) {
     coap_tick_t now;
-#ifdef MBEDTLS_SSL_DTLS_CONNECTION_ID
-    if (COAP_PROTO_NOT_RELIABLE(c_session->proto)) {
-      /*
-       * Enable passive DTLS CID support.
-       *
-       * Note: Set MBEDTLS_SSL_DTLS_CONNECTION_ID_COMPAT to 0 (the default)
-       * to use RFC9146 extension ID of 54, rather than the draft version -05
-       * value of 254.
-       */
-      mbedtls_ssl_set_cid(&m_env->ssl, MBEDTLS_SSL_CID_ENABLED, NULL, 0);
-    }
-#endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
+
     coap_ticks(&now);
     m_env->last_timeout = now;
     ret = do_mbedtls_handshake(c_session, m_env);
@@ -1888,7 +2191,7 @@ coap_dtls_free_session(coap_session_t *c_session) {
   if (c_session && c_session->context && c_session->tls) {
     coap_dtls_free_mbedtls_env(c_session->tls);
     c_session->tls = NULL;
-    coap_handle_event(c_session->context, COAP_EVENT_DTLS_CLOSED, c_session);
+    coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CLOSED, c_session);
   }
   return;
 }
@@ -1920,6 +2223,8 @@ coap_dtls_send(coap_session_t *c_session,
     return -1;
   }
   c_session->dtls_event = -1;
+  coap_log_debug("*  %s: dtls:  sent %4d bytes\n",
+                 coap_session_str(c_session), (int)data_len);
   if (m_env->established) {
     ret = mbedtls_ssl_write(&m_env->ssl, (const unsigned char *) data, data_len);
     if (ret <= 0) {
@@ -1953,22 +2258,14 @@ coap_dtls_send(coap_session_t *c_session,
   }
 
   if (c_session->dtls_event >= 0) {
-    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected() */
+    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected_lkd() */
     if (c_session->dtls_event != COAP_EVENT_DTLS_CLOSED)
-      coap_handle_event(c_session->context, c_session->dtls_event, c_session);
+      coap_handle_event_lkd(c_session->context, c_session->dtls_event, c_session);
     if (c_session->dtls_event == COAP_EVENT_DTLS_ERROR ||
         c_session->dtls_event == COAP_EVENT_DTLS_CLOSED) {
-      coap_session_disconnected(c_session, COAP_NACK_TLS_FAILED);
+      coap_session_disconnected_lkd(c_session, COAP_NACK_TLS_FAILED);
       ret = -1;
     }
-  }
-  if (ret > 0) {
-    if (ret == (ssize_t)data_len)
-      coap_log_debug("*  %s: dtls:  sent %4d bytes\n",
-                     coap_session_str(c_session), ret);
-    else
-      coap_log_debug("*  %s: dtls:  sent %4d of %4zd bytes\n",
-                     coap_session_str(c_session), ret, data_len);
   }
   return ret;
 }
@@ -2035,7 +2332,7 @@ coap_dtls_handle_timeout(coap_session_t *c_session) {
   if ((++c_session->dtls_timeout_count > c_session->max_retransmit) ||
       (do_mbedtls_handshake(c_session, m_env) < 0)) {
     /* Too many retries */
-    coap_session_disconnected(c_session, COAP_NACK_TLS_FAILED);
+    coap_session_disconnected_lkd(c_session, COAP_NACK_TLS_FAILED);
     return 1;
   }
   return 0;
@@ -2068,28 +2365,21 @@ coap_dtls_receive(coap_session_t *c_session,
 
   if (m_env->established) {
 #if COAP_CONSTRAINED_STACK
-    /* pdu protected by mutex m_dtls_recv */
+    /* pdu can be protected by global_lock if needed */
     static uint8_t pdu[COAP_RXBUFFER_SIZE];
 #else /* ! COAP_CONSTRAINED_STACK */
     uint8_t pdu[COAP_RXBUFFER_SIZE];
 #endif /* ! COAP_CONSTRAINED_STACK */
 
-#if COAP_CONSTRAINED_STACK
-    coap_mutex_lock(&m_dtls_recv);
-#endif /* COAP_CONSTRAINED_STACK */
-
     if (c_session->state == COAP_SESSION_STATE_HANDSHAKE) {
-      coap_handle_event(c_session->context, COAP_EVENT_DTLS_CONNECTED,
-                        c_session);
+      coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CONNECTED,
+                            c_session);
       c_session->sock.lfunc[COAP_LAYER_TLS].l_establish(c_session);
     }
 
     ret = mbedtls_ssl_read(&m_env->ssl, pdu, sizeof(pdu));
     if (ret > 0) {
       ret = coap_handle_dgram(c_session->context, c_session, pdu, (size_t)ret);
-#if COAP_CONSTRAINED_STACK
-      coap_mutex_unlock(&m_dtls_recv);
-#endif /* COAP_CONSTRAINED_STACK */
       goto finish;
     }
     switch (ret) {
@@ -2106,9 +2396,6 @@ coap_dtls_receive(coap_session_t *c_session,
                     -ret, get_error_string(ret), data_len);
       break;
     }
-#if COAP_CONSTRAINED_STACK
-    coap_mutex_unlock(&m_dtls_recv);
-#endif /* COAP_CONSTRAINED_STACK */
     ret = -1;
   } else {
     ret = do_mbedtls_handshake(c_session, m_env);
@@ -2122,20 +2409,18 @@ coap_dtls_receive(coap_session_t *c_session,
         if (ret == 1) {
           /* Just connected, so send the data */
           coap_session_connected(c_session);
-        } else {
-          ret = -1;
         }
       }
       ret = -1;
     }
   }
   if (c_session->dtls_event >= 0) {
-    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected() */
+    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected_lkd() */
     if (c_session->dtls_event != COAP_EVENT_DTLS_CLOSED)
-      coap_handle_event(c_session->context, c_session->dtls_event, c_session);
+      coap_handle_event_lkd(c_session->context, c_session->dtls_event, c_session);
     if (c_session->dtls_event == COAP_EVENT_DTLS_ERROR ||
         c_session->dtls_event == COAP_EVENT_DTLS_CLOSED) {
-      coap_session_disconnected(c_session, COAP_NACK_TLS_FAILED);
+      coap_session_disconnected_lkd(c_session, COAP_NACK_TLS_FAILED);
       ssl_data = NULL;
       ret = -1;
     }
@@ -2265,7 +2550,7 @@ coap_tls_new_client_session(coap_session_t *c_session) {
   c_session->tls = m_env;
   ret = do_mbedtls_handshake(c_session, m_env);
   if (ret == 1) {
-    coap_handle_event(c_session->context, COAP_EVENT_DTLS_CONNECTED, c_session);
+    coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CONNECTED, c_session);
     c_session->sock.lfunc[COAP_LAYER_TLS].l_establish(c_session);
   }
   return m_env;
@@ -2296,7 +2581,7 @@ coap_tls_new_server_session(coap_session_t *c_session) {
   c_session->tls = m_env;
   ret = do_mbedtls_handshake(c_session, m_env);
   if (ret == 1) {
-    coap_handle_event(c_session->context, COAP_EVENT_DTLS_CONNECTED, c_session);
+    coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CONNECTED, c_session);
     c_session->sock.lfunc[COAP_LAYER_TLS].l_establish(c_session);
   }
   return m_env;
@@ -2364,8 +2649,8 @@ coap_tls_write(coap_session_t *c_session, const uint8_t *data,
   } else {
     ret = do_mbedtls_handshake(c_session, m_env);
     if (ret == 1) {
-      coap_handle_event(c_session->context, COAP_EVENT_DTLS_CONNECTED,
-                        c_session);
+      coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CONNECTED,
+                            c_session);
       c_session->sock.lfunc[COAP_LAYER_TLS].l_establish(c_session);
     } else {
       ret = -1;
@@ -2373,12 +2658,12 @@ coap_tls_write(coap_session_t *c_session, const uint8_t *data,
   }
 
   if (c_session->dtls_event >= 0) {
-    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected() */
+    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected_lkd() */
     if (c_session->dtls_event != COAP_EVENT_DTLS_CLOSED)
-      coap_handle_event(c_session->context, c_session->dtls_event, c_session);
+      coap_handle_event_lkd(c_session->context, c_session->dtls_event, c_session);
     if (c_session->dtls_event == COAP_EVENT_DTLS_ERROR ||
         c_session->dtls_event == COAP_EVENT_DTLS_CLOSED) {
-      coap_session_disconnected(c_session, COAP_NACK_TLS_FAILED);
+      coap_session_disconnected_lkd(c_session, COAP_NACK_TLS_FAILED);
       ret = -1;
     }
   }
@@ -2414,8 +2699,8 @@ coap_tls_read(coap_session_t *c_session, uint8_t *data, size_t data_len) {
   if (!m_env->established && !m_env->sent_alert) {
     ret = do_mbedtls_handshake(c_session, m_env);
     if (ret == 1) {
-      coap_handle_event(c_session->context, COAP_EVENT_DTLS_CONNECTED,
-                        c_session);
+      coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CONNECTED,
+                            c_session);
       c_session->sock.lfunc[COAP_LAYER_TLS].l_establish(c_session);
     }
   }
@@ -2434,6 +2719,9 @@ coap_tls_read(coap_session_t *c_session, uint8_t *data, size_t data_len) {
         m_env->sent_alert = 1;
         c_session->dtls_event = COAP_EVENT_DTLS_CLOSED;
         break;
+#if MBEDTLS_VERSION_NUMBER >= 0x03060000
+      case MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET:
+#endif /* MBEDTLS_VERSION_NUMBER >= 0x03060000 */
       case MBEDTLS_ERR_SSL_WANT_READ:
         errno = EAGAIN;
         ret = 0;
@@ -2451,12 +2739,12 @@ coap_tls_read(coap_session_t *c_session, uint8_t *data, size_t data_len) {
   }
 
   if (c_session->dtls_event >= 0) {
-    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected() */
+    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected_lkd() */
     if (c_session->dtls_event != COAP_EVENT_DTLS_CLOSED)
-      coap_handle_event(c_session->context, c_session->dtls_event, c_session);
+      coap_handle_event_lkd(c_session->context, c_session->dtls_event, c_session);
     if (c_session->dtls_event == COAP_EVENT_DTLS_ERROR ||
         c_session->dtls_event == COAP_EVENT_DTLS_CLOSED) {
-      coap_session_disconnected(c_session, COAP_NACK_TLS_FAILED);
+      coap_session_disconnected_lkd(c_session, COAP_NACK_TLS_FAILED);
       ret = -1;
     }
   }
@@ -2477,8 +2765,10 @@ coap_dtls_shutdown(void) {
 #if COAP_CLIENT_SUPPORT
   mbedtls_free(psk_ciphers);
   mbedtls_free(pki_ciphers);
+  mbedtls_free(ecjpake_ciphers);
   psk_ciphers = NULL;
   pki_ciphers = NULL;
+  ecjpake_ciphers = NULL;
   processed_ciphers = 0;
 #endif /* COAP_CLIENT_SUPPORT */
   coap_dtls_set_log_level(COAP_LOG_EMERG);
@@ -2566,6 +2856,7 @@ coap_digest_setup(void) {
 #else
     if (mbedtls_sha256_starts(digest_ctx, 0) != 0) {
 #endif /* MBEDTLS_2_X_COMPAT */
+      coap_digest_free(digest_ctx);
       return NULL;
     }
   }

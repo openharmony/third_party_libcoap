@@ -2,7 +2,7 @@
  * coap_block.h -- block transfer
  *
  * Copyright (C) 2010-2012,2014-2015 Olaf Bergmann <bergmann@tzi.org>
- * Copyright (C) 2022-2023           Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2022-2024           Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -62,14 +62,12 @@ typedef struct {
 #define COAP_BLOCK_SINGLE_BODY  0x02 /* Deliver the data as a single body */
 #define COAP_BLOCK_TRY_Q_BLOCK   0x04 /* Try Q-Block method */
 #define COAP_BLOCK_USE_M_Q_BLOCK 0x08 /* Use M bit when recovering Q-Block2 */
-#define COAP_BLOCK_NO_PREEMPTIVE_RTAG 0x10 /* Don't use pre-emptive Request-Tags */
-/* Note 0x40 and 0x80 are internally defined elsewhere */
-
-/**
- * Returns @c 1 if libcoap was built with option Q-BlockX support,
- * @c 0 otherwise.
- */
-int coap_q_block_is_supported(void);
+#define COAP_BLOCK_NO_PREEMPTIVE_RTAG 0x10 /* (cl) Don't use pre-emptive Request-Tags */
+#define COAP_BLOCK_STLESS_FETCH  0x20 /* (cl) Assume server supports stateless FETCH */
+#define COAP_BLOCK_STLESS_BLOCK2 0x40 /* (svr)Server is stateless for handling Block2 */
+#define COAP_BLOCK_NOT_RANDOM_BLOCK1 0x80 /* (svr)Disable server handling random order
+                                             block1 */
+/* WARNING: Added defined values must not encroach into 0xff000000 which are defined elsewhere */
 
 /**
  * Returns the value of the least significant byte of a Block option @p opt.
@@ -331,12 +329,12 @@ typedef void (*coap_release_large_data_t)(coap_session_t *session,
  *
  * @return @c 1 if addition is successful, else @c 0.
  */
-int coap_add_data_large_request(coap_session_t *session,
-                                coap_pdu_t *pdu,
-                                size_t length,
-                                const uint8_t *data,
-                                coap_release_large_data_t release_func,
-                                void *app_ptr);
+COAP_API int coap_add_data_large_request(coap_session_t *session,
+                                         coap_pdu_t *pdu,
+                                         size_t length,
+                                         const uint8_t *data,
+                                         coap_release_large_data_t release_func,
+                                         void *app_ptr);
 
 /**
  * Associates given data with the @p response pdu that is passed as fourth
@@ -388,18 +386,18 @@ int coap_add_data_large_request(coap_session_t *session,
  *
  * @return @c 1 if addition is successful, else @c 0.
  */
-int coap_add_data_large_response(coap_resource_t *resource,
-                                 coap_session_t *session,
-                                 const coap_pdu_t *request,
-                                 coap_pdu_t *response,
-                                 const coap_string_t *query,
-                                 uint16_t media_type,
-                                 int maxage,
-                                 uint64_t etag,
-                                 size_t length,
-                                 const uint8_t *data,
-                                 coap_release_large_data_t release_func,
-                                 void *app_ptr);
+COAP_API int coap_add_data_large_response(coap_resource_t *resource,
+                                          coap_session_t *session,
+                                          const coap_pdu_t *request,
+                                          coap_pdu_t *response,
+                                          const coap_string_t *query,
+                                          uint16_t media_type,
+                                          int maxage,
+                                          uint64_t etag,
+                                          size_t length,
+                                          const uint8_t *data,
+                                          coap_release_large_data_t release_func,
+                                          void *app_ptr);
 
 /**
  * Set the context level CoAP block handling bits for handling RFC7959.
@@ -419,24 +417,24 @@ int coap_add_data_large_response(coap_resource_t *resource,
  * @param context        The coap_context_t object.
  * @param block_mode     Zero or more COAP_BLOCK_ or'd options
  */
-void coap_context_set_block_mode(coap_context_t *context,
-                                 uint8_t block_mode);
+COAP_API void coap_context_set_block_mode(coap_context_t *context,
+                                          uint32_t block_mode);
 
 /**
- * Cancel an observe that is being tracked by the client large receive logic.
- * (coap_context_set_block_mode() has to be called)
- * This will trigger the sending of an observe cancel pdu to the server.
+ * Set the context level maximum block size that the server supports when sending
+ * or receiving packets with Block1 or Block2 options.
+ * This maximum block size flows down to a session when a session is created.
  *
- * @param session  The session that is being used for the observe.
- * @param token    The original token used to initiate the observation.
- * @param message_type The COAP_MESSAGE_ type (NON or CON) to send the observe
- *                 cancel pdu as.
+ * Note: This function must be called before the session is set up.
  *
- * @return @c 1 if observe cancel transmission initiation is successful,
- *         else @c 0.
+ * Note: COAP_BLOCK_USE_LIBCOAP must be set using coap_context_set_block_mode()
+ * if libcoap is to do this work.
+ *
+ * @param context        The coap_context_t object.
+ * @param max_block_size The maximum block size a server supports.  Can be 0
+ *                       (reset), or must be 16, 32, 64, 128, 256, 512 or 1024.
  */
-int coap_cancel_observe(coap_session_t *session, coap_binary_t *token,
-                        coap_pdu_type_t message_type);
+COAP_API int coap_context_set_max_block_size(coap_context_t *context, size_t max_block_size);
 
 /**@}*/
 

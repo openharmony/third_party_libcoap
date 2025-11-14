@@ -1,8 +1,8 @@
 # Makefile.am for libcoap
 #
-# Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
+# Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org>
 # Copyright (C) 2015-2017 Carsten Schoenert <c.schoenert@t-online.de>
-# Copyright (C) 2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+# Copyright (C) 2018-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
@@ -33,9 +33,11 @@ EXTRA_DIST = \
   LICENSE \
   CMakeLists.txt \
   cmake_coap_config.h.in \
+  cmake_coap_defines.h.in \
   cmake/Config.cmake.in \
   cmake/FindMbedTLS.cmake \
   cmake/FindTinyDTLS.cmake \
+  cmake/FindwolfSSL.cmake \
   coap_config.h.contiki \
   coap_config.h.riot \
   coap_config.h.windows \
@@ -59,7 +61,6 @@ EXTRA_DIST = \
   examples/lwip/server-coap.c \
   examples/lwip/server-coap.h \
   examples/lwip/config/coap_config.h \
-  examples/lwip/config/coap_config.h.in \
   examples/lwip/config/lwipopts.h \
   examples/lwip/config/lwippools.h \
   examples/riot/examples_libcoap_client/client-coap.c \
@@ -82,8 +83,18 @@ EXTRA_DIST = \
   examples/riot/pkg_libcoap/Makefile.dep \
   examples/riot/pkg_libcoap/Makefile.include \
   examples/riot/pkg_libcoap/Makefile.libcoap \
+  examples/riot/tests_pkg_libcoap/app.config \
+  examples/riot/tests_pkg_libcoap/Kconfig \
+  examples/riot/tests_pkg_libcoap/libcoap-test.c \
+  examples/riot/tests_pkg_libcoap/libcoap-test.h \
+  examples/riot/tests_pkg_libcoap/main.c \
+  examples/riot/tests_pkg_libcoap/Makefile \
+  examples/riot/tests_pkg_libcoap/Makefile.ci \
+  examples/riot/tests_pkg_libcoap/README.md \
+  examples/riot/tests_pkg_libcoap/tests/01-run.py \
   examples/riot/README \
   Makefile.libcoap \
+  include/coap$(LIBCOAP_API_VERSION)/coap_libcoap_build.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_riot.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_asn1_internal.h \
@@ -101,19 +112,18 @@ EXTRA_DIST = \
   include/coap$(LIBCOAP_API_VERSION)/coap_netif_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_oscore_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_pdu_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_prng_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_proxy_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_resource_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_session_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_sha1_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_subscribe_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_tcp_internal.h \
+  include/coap$(LIBCOAP_API_VERSION)/coap_threadsafe_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_uri_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_uthash_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_utlist_internal.h \
   include/coap$(LIBCOAP_API_VERSION)/coap_ws_internal.h \
-  include/coap$(LIBCOAP_API_VERSION)/coap.h.in \
-  include/coap$(LIBCOAP_API_VERSION)/coap.h.riot \
-  include/coap$(LIBCOAP_API_VERSION)/coap.h.riot.in \
-  include/coap$(LIBCOAP_API_VERSION)/coap.h.windows \
-  include/coap$(LIBCOAP_API_VERSION)/coap.h.windows.in \
   include/oscore/oscore_cbor.h \
   include/oscore/oscore_context.h \
   include/oscore/oscore_cose.h \
@@ -197,15 +207,19 @@ libcoap_@LIBCOAP_NAME_SUFFIX@_la_SOURCES = \
   src/coap_option.c \
   src/coap_oscore.c \
   src/coap_pdu.c \
+  src/coap_proxy.c \
   src/coap_prng.c \
   src/coap_resource.c \
   src/coap_session.c \
+  src/coap_sha1.c \
   src/coap_str.c \
   src/coap_subscribe.c \
   src/coap_tcp.c \
+  src/coap_threadsafe.c \
   src/coap_time.c \
   src/coap_tinydtls.c \
   src/coap_uri.c \
+  src/coap_wolfssl.c \
   src/coap_ws.c
 
 if COAP_OSCORE_SUPPORT
@@ -225,13 +239,14 @@ libcoap_includedir = $(includedir)/coap$(LIBCOAP_API_VERSION)/
 #  $(top_srcdir)/include/coap-$(LIBCOAP_API_VERSION)/*
 
 libcoap_include_HEADERS = \
-  $(top_builddir)/include/coap$(LIBCOAP_API_VERSION)/coap.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/libcoap.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_address.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_async.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_block.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_cache.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_debug.h \
+  $(top_builddir)/include/coap$(LIBCOAP_API_VERSION)/coap_defines.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_dtls.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_encode.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_event.h \
@@ -243,10 +258,12 @@ libcoap_include_HEADERS = \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_oscore.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_pdu.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_prng.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_proxy.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_resource.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_session.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_str.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_subscribe.h \
+  $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_supported.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_time.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_uri.h \
   $(top_srcdir)/include/coap$(LIBCOAP_API_VERSION)/coap_ws.h
@@ -348,15 +365,7 @@ clean-local:
 
 distclean-local:
 	@rm -f src/*.o src/*.lo
-	rm -f libcoap-$(LIBCOAP_API_VERSION).map
-	rm -f libcoap-$(LIBCOAP_API_VERSION).sym
 	rm -f libcoap-$(LIBCOAP_NAME_SUFFIX).pc
-	@echo
-	@echo "     ---> Please note the following important advice! <---"
-	@echo "     The files libcoap-$(LIBCOAP_API_VERSION).{map,sym} are removed by the distclean target!"
-	@echo "     To regenerate this two files you need to call 'make update-map-file' first before any"
-	@echo "     other Make target. Otherwise the build of libcoap will fail!"
-	@echo
 
 ## Ensure we have actual *.{map,sym} files if we create a release tarball.
 dist-local: update-map-file
@@ -364,4 +373,3 @@ dist-local: update-map-file
 ## Finaly some phony targets, just to ensure those targets are always buildable
 ## no matter if the user has created same called files.
 .PHONY: update-map-file check_ctags
-

@@ -1,6 +1,6 @@
 /* coap_layers.c -- Layer handling for libcoap
  *
- * Copyright (C) 2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2023-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -13,7 +13,7 @@
  * @brief Layer Handling
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
 /*
  * Layer index table.  A whole protocol chunk gets copied into coap_socket_t.

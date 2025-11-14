@@ -1,6 +1,6 @@
 /* coap_time.c -- Clock Handling
  *
- * Copyright (C) 2015,2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2015,2023-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -13,7 +13,7 @@
  * @brief Clock handling functions
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
 #ifdef HAVE_TIME_H
 #include <time.h>

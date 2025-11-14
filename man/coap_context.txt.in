@@ -19,9 +19,12 @@ coap_context_set_max_handshake_sessions,
 coap_context_get_max_handshake_sessions,
 coap_context_set_session_timeout,
 coap_context_get_session_timeout,
-coap_context_set_csm_timeout,
-coap_context_get_csm_timeout,
-coap_context_set_max_token_size
+coap_context_set_csm_timeout_ms,
+coap_context_get_csm_timeout_ms,
+coap_context_set_max_token_size,
+coap_context_set_app_data,
+coap_context_get_app_data,
+coap_context_set_cid_tuple_change
 - Work with CoAP contexts
 
 SYNOPSIS
@@ -50,17 +53,24 @@ unsigned int _session_timeout_);*
 *unsigned int coap_context_get_session_timeout(
 const coap_context_t *_context_);*
 
-*void coap_context_set_csm_timeout(coap_context_t *_context_,
-unsigned int _csm_timeout_);*
+*void coap_context_set_csm_timeout_ms(coap_context_t *_context_,
+unsigned int _csm_timeout_ms_);*
 
-*unsigned int coap_context_get_csm_timeout(const coap_context_t *_context_);*
+*unsigned int coap_context_get_csm_timeout_ms(const coap_context_t *_context_);*
 
 *void coap_context_set_max_token_size(coap_context_t *_context_,
 size_t _max_token_size_);*
 
+*void coap_context_set_app_data(coap_context_t *_context_, void *_app_data_);*
+
+*void *coap_context_get_app_data(const coap_context_t *_context_);*
+
+*int coap_context_set_cid_tuple_change(coap_context_t *_context_context, uint8_t _every_);*
+
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -95,6 +105,14 @@ attached Sessions and Endpoints.
 *WARNING:* It is unsafe to call *coap_free_context*() in an atexit() handler
 as other libraries may also call atexit() and clear down some CoAP
 required functionality.
+
+*WARNING:* It is unsafe to call *coap_free_context*() in any libcoap callback
+handlers as set up in *coap_handler*(3).
+
+*WARNING:* In a multi-thread, libcoap thread-safe environment, if other threads
+are using _context_, it is not recommended to call *coap_free_context*() as
+various libcoap APIs will unexpectedly fail. It is best to clear down those other
+threads first before calling *coap_free_context*().
 
 *Function: coap_context_set_max_idle_sessions()*
 
@@ -132,16 +150,19 @@ removed. 0 (the default) means wait for the default of 300 seconds.
 The *coap_context_get_session_timeout*() function returns the seconds to wait
 before timing out an idle server session for _context_.
 
-*Function: coap_context_set_csm_timeout()*
+*Function: coap_context_set_csm_timeout_ms()*
 
-The *coap_context_set_csm_timeout*() function sets the number of seconds to
-wait for a (TCP) CSM negotiation response from the peer to _csm_timeout_ for
-_context_.  0 (the default) means wait forever.
+The *coap_context_set_csm_timeout_ms*() function sets the number of milliseconds
+to wait for a (TCP) CSM negotiation response from the peer to _csm_timeout_ms_
+for _context_ before timing out and assuming CoAP server is 'broken'. The
+default is 1000 milliseconds. The minimum value for _csm_timeout_ms_ is set to
+10 milliseconds and the maximum value for _csm_timeout_ms_ is set to 10000
+milliseconds.
 
-*Function: coap_context_get_csm_timeout()*
+*Function: coap_context_get_csm_timeout_ms()*
 
-The *coap_context_get_csm_timeout*() function returns the seconds to wait for
-a (TCP) CSM negotiation response from the peer for _context_,
+The *coap_context_get_csm_timeout_ms*() function returns the milliseconds to wait
+for a (TCP) CSM negotiation response from the peer for _context_,
 
 *Function: coap_context_set_max_token_size()*
 
@@ -154,6 +175,23 @@ bytes, else 8 to disable https://rfc-editor.org/rfc/rfc8974[RFC8974]
 *NOTE:* For the client, it will send an initial PDU to test the server
 supports the requested extended token size as per
 "https://rfc-editor.org/rfc/rfc8974.html#section-2.2.2[RFC8794 Section 2.2.2]"
+
+*Function: coap_context_set_app_data()*
+
+The *coap_context_set_app_data*() function is used to define a _app_data_
+pointer for the _context_ which can then be retrieved at a later date.
+
+*Function: coap_context_get_app_data()*
+
+The *coap_context_get_app_data*() function is used to retrieve the app_data
+pointer previously defined by *coap_context_set_app_data*().
+
+*Function: coap_context_set_cid_tuple_change()*
+
+The *coap_context_set_cid_tuple_change*() function is used to define to a client
+to force the client's port to change _every_ packets sent, providing the ability
+to test a CID (RFC9146) enabled server. Only supported by DTLS libraries that
+support CID.
 
 RETURN VALUES
 -------------
@@ -169,8 +207,12 @@ outstanding server sessions in (D)TLS handshake.
 *coap_context_get_session_timeout*() returns the seconds to wait before timing
 out an idle server session.
 
-*coap_context_get_csm_timeout*() returns the seconds to wait for a (TCP) CSM
-negotiation response from the peer.
+*coap_context_get_csm_timeout_ms*() returns the milliseconds to wait for a
+(TCP) CSM negotiation response from the peer.
+
+*coap_context_get_app_data*() returns a previously defined pointer.
+
+*coap_context_set_cid_tuple_change*() returns 1 on success, else 0;
 
 SEE ALSO
 --------
@@ -188,9 +230,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

@@ -2,7 +2,7 @@
  * coap_session_internal.h -- Structures, Enums & Functions that are not
  * exposed to application programming
  *
- * Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -176,14 +176,15 @@ struct coap_session_t {
   int dtls_event;                       /**< Tracking any (D)TLS events on this
                                              session */
   uint32_t tx_rtag;               /**< Next Request-Tag number to use */
+  uint32_t block_mode;           /**< Zero or more COAP_BLOCK_ or'd options */
   uint8_t csm_bert_rem_support;  /**< CSM TCP BERT blocks supported (remote) */
   uint8_t csm_bert_loc_support;  /**< CSM TCP BERT blocks supported (local) */
-  uint8_t block_mode;             /**< Zero or more COAP_BLOCK_ or'd options */
   uint8_t doing_first;            /**< Set if doing client's first request */
   uint8_t proxy_session;        /**< Set if this is an ongoing proxy session */
   uint8_t delay_recursive;        /**< Set if in coap_client_delay_first() */
   uint8_t no_observe_cancel;      /**< Set if do not cancel observe on session
                                        close */
+  uint8_t csm_not_seen;           /**< Set if timeout waiting for CSM */
 #if COAP_OSCORE_SUPPORT
   uint8_t oscore_encryption;      /**< OSCORE is used for this session  */
   COAP_OSCORE_B_2_STEP b_2_step;  /**< Appendix B.2 negotiation step */
@@ -197,9 +198,16 @@ struct coap_session_t {
   coap_ws_state_t *ws;            /**< WS state */
   coap_str_const_t *ws_host;      /**< Host to use in WS Request */
 #endif /* COAP_WS_SUPPORT */
+#if COAP_OSCORE_SUPPORT
+  uint8_t done_b_1_2;             /**< Have sent initial request */
+#endif /* COAP_OSCORE_SUPPORT */
   volatile uint8_t max_token_checked; /**< Check for max token size
                                            coap_ext_token_check_t */
-  uint16_t remote_test_mid;       /**< mid used for checking remote
+#if COAP_CLIENT_SUPPORT
+  uint8_t negotiated_cid;         /**< Set for a client if CID negotiated */
+#endif /* COAP_CLIENT_SUPPORT */
+  uint8_t is_dtls13;              /**< Set if session is DTLS1.3 */
+  coap_mid_t remote_test_mid;     /**< mid used for checking remote
                                        support */
   uint32_t max_token_size;        /**< Largest token size supported RFC8974 */
   uint64_t tx_token;              /**< Next token number to use */
@@ -209,6 +217,11 @@ struct coap_session_t {
                                        been processed */
   coap_mid_t last_con_mid;        /**< The last CON mid that has been
                                        been processed */
+  coap_response_t last_con_handler_res; /**< The result of calling the response handler
+                                       of the last CON */
+#if COAP_SERVER_SUPPORT
+  coap_bin_const_t *client_cid;     /**< Contains client CID or NULL */
+#endif /* COAP_SERVER_SUPPORT */
 };
 
 #if COAP_SERVER_SUPPORT
@@ -265,6 +278,28 @@ void coap_session_send_csm(coap_session_t *session);
 void coap_session_connected(coap_session_t *session);
 
 /**
+ * Notify session that it has failed.  This cleans up any outstanding / queued
+ * transmissions, observations etc..
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param session The CoAP session.
+ * @param reason The reason why the session was disconnected.
+ */
+void coap_session_disconnected_lkd(coap_session_t *session,
+                                   coap_nack_reason_t reason);
+
+/**
+ * Send a ping message for the session.
+ * @param session The CoAP session.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @return COAP_INVALID_MID if there is an error
+ */
+coap_mid_t coap_session_send_ping_lkd(coap_session_t *session);
+
+/**
  * Refresh the session's current Identity Hint (PSK).
  * Note: A copy of @p psk_hint is maintained in the session by libcoap.
  *
@@ -308,14 +343,14 @@ int coap_session_refresh_psk_identity(coap_session_t *session,
  * Creates a new server session for the specified endpoint.
  * @param ctx The CoAP context.
  * @param ep An endpoint where an incoming connection request is pending.
+ * @param extra Available for use by any underlying network stack.
  *
- * @return A new CoAP session or NULL if failed. Call coap_session_release to
+ * @return A new CoAP session or NULL if failed. Call coap_session_release_lkd to
  * add to unused queue.
  */
-coap_session_t *coap_new_server_session(
-    coap_context_t *ctx,
-    coap_endpoint_t *ep
-);
+coap_session_t *coap_new_server_session(coap_context_t *ctx,
+                                        coap_endpoint_t *ep,
+                                        void *extra);
 #endif /* COAP_SERVER_SUPPORT */
 
 /**
@@ -327,6 +362,27 @@ coap_session_t *coap_new_server_session(
  *
  */
 void coap_session_establish(coap_session_t *session);
+
+/**
+ * Increment reference counter on a session.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param session The CoAP session.
+ * @return same as session
+ */
+coap_session_t *coap_session_reference_lkd(coap_session_t *session);
+
+/**
+ * Decrement reference counter on a session.
+ * Note that the session may be deleted as a result and should not be used
+ * after this call.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param session The CoAP session.
+ */
+void coap_session_release_lkd(coap_session_t *session);
 
 /**
  * Send a pdu according to the session's protocol. This function returns
@@ -356,6 +412,33 @@ ssize_t coap_session_delay_pdu(coap_session_t *session, coap_pdu_t *pdu,
  */
 coap_session_t *coap_endpoint_get_session(coap_endpoint_t *endpoint,
                                           const coap_packet_t *packet, coap_tick_t now);
+
+/**
+ * Create a new endpoint for communicating with peers.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param context     The coap context that will own the new endpoint,
+ * @param listen_addr Address the endpoint will listen for incoming requests
+ *                    on or originate outgoing requests from. Use NULL to
+ *                    specify that no incoming request will be accepted and
+ *                    use a random endpoint.
+ * @param proto       Protocol used on this endpoint,
+ *
+ * @return The new endpoint or @c NULL on failure.
+ */
+coap_endpoint_t *coap_new_endpoint_lkd(coap_context_t *context, const coap_address_t *listen_addr,
+                                       coap_proto_t proto);
+
+/**
+ * Release an endpoint and all the structures associated with it.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param endpoint The endpoint to release.
+ */
+void coap_free_endpoint_lkd(coap_endpoint_t *endpoint);
+
 #endif /* COAP_SERVER_SUPPORT */
 
 /**
@@ -365,6 +448,121 @@ coap_session_t *coap_endpoint_get_session(coap_endpoint_t *endpoint,
  * @return maximum PDU size, not including header (but including token).
  */
 size_t coap_session_max_pdu_rcv_size(const coap_session_t *session);
+
+/**
+ * Get maximum acceptable PDU size
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param session The CoAP session.
+ *
+ * @return maximum PDU size, not including header (but including token).
+ */
+size_t coap_session_max_pdu_size_lkd(const coap_session_t *session);
+
+/**
+ * Creates a new client session to the designated server.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param ctx The CoAP context.
+ * @param local_if Address of local interface. It is recommended to use NULL to let
+ *                 the operating system choose a suitable local interface. If an
+ *                 address is specified, the port number should be zero, which means
+ *                 that a free port is automatically selected.
+ * @param server The server's address. If the port number is zero, the default port
+ *               for the protocol will be used.
+ * @param proto Protocol.
+ *
+ * @return A new CoAP session or NULL if failed. Call coap_session_release_lkd to free.
+ */
+coap_session_t *coap_new_client_session_lkd(
+    coap_context_t *ctx,
+    const coap_address_t *local_if,
+    const coap_address_t *server,
+    coap_proto_t proto
+);
+
+/**
+ * Creates a new client session to the designated server with PKI credentials
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param ctx The CoAP context.
+ * @param local_if Address of local interface. It is recommended to use NULL to
+ *                 let the operating system choose a suitable local interface.
+ *                 If an address is specified, the port number should be zero,
+ *                 which means that a free port is automatically selected.
+ * @param server The server's address. If the port number is zero, the default
+ *               port for the protocol will be used.
+ * @param proto CoAP Protocol.
+ * @param setup_data PKI parameters.
+ *
+ * @return A new CoAP session or NULL if failed. Call coap_session_release_lkd()
+ *         to free.
+ */
+coap_session_t *coap_new_client_session_pki_lkd(coap_context_t *ctx,
+                                                const coap_address_t *local_if,
+                                                const coap_address_t *server,
+                                                coap_proto_t proto,
+                                                coap_dtls_pki_t *setup_data
+                                               );
+
+/**
+ * Creates a new client session to the designated server with PSK credentials
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @deprecated Use coap_new_client_session_psk2_lkd() instead.
+ *
+ * @param ctx The CoAP context.
+ * @param local_if Address of local interface. It is recommended to use NULL to let
+ *                 the operating system choose a suitable local interface. If an
+ *                 address is specified, the port number should be zero, which means
+ *                 that a free port is automatically selected.
+ * @param server The server's address. If the port number is zero, the default port
+ *               for the protocol will be used.
+ * @param proto Protocol.
+ * @param identity PSK client identity
+ * @param key PSK shared key
+ * @param key_len PSK shared key length
+ *
+ * @return A new CoAP session or NULL if failed. Call coap_session_release_lkd to free.
+ */
+coap_session_t *coap_new_client_session_psk_lkd(coap_context_t *ctx,
+                                                const coap_address_t *local_if,
+                                                const coap_address_t *server,
+                                                coap_proto_t proto,
+                                                const char *identity,
+                                                const uint8_t *key,
+                                                unsigned key_len
+                                               );
+
+/**
+ * Creates a new client session to the designated server with PSK credentials
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param ctx The CoAP context.
+ * @param local_if Address of local interface. It is recommended to use NULL to
+ *                 let the operating system choose a suitable local interface.
+ *                 If an address is specified, the port number should be zero,
+ *                 which means that a free port is automatically selected.
+ * @param server The server's address. If the port number is zero, the default
+ *               port for the protocol will be used.
+ * @param proto CoAP Protocol.
+ * @param setup_data PSK parameters.
+ *
+ * @return A new CoAP session or NULL if failed. Call coap_session_release_lkd()
+ *         to free.
+ */
+coap_session_t *coap_new_client_session_psk2_lkd(coap_context_t *ctx,
+                                                 const coap_address_t *local_if,
+                                                 const coap_address_t *server,
+                                                 coap_proto_t proto,
+                                                 coap_dtls_cpsk_t *setup_data
+                                                );
+
 
 /**
  * Create a new DTLS session for the @p session.
@@ -382,6 +580,10 @@ coap_session_t *coap_session_new_dtls_session(coap_session_t *session,
 
 void coap_session_free(coap_session_t *session);
 void coap_session_mfree(coap_session_t *session);
+
+void coap_read_session(coap_context_t *ctx, coap_session_t *session, coap_tick_t now);
+
+void coap_connect_session(coap_session_t *session, coap_tick_t now);
 
 #define COAP_SESSION_REF(s) ((s)->ref
 

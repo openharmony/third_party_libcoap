@@ -1,6 +1,6 @@
 # Makefile
 #
-#  Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org> and others
+#  Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org> and others
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
@@ -15,10 +15,9 @@ LIBCOAP_API_VERSION = $(shell if [ -f $(libcoap_dir)/configure.ac ];  then \
 
 coap_include_dir = $(libcoap_dir)/include/coap$(LIBCOAP_API_VERSION)
 
-WITH_LWIP_BRANCH=STABLE-2_1_3_RELEASE
-WITH_LWIP_CONTRIB_BRANCH=STABLE-2_1_0_RELEASE
+WITH_LWIP_BRANCH=STABLE-2_2_0_RELEASE
 # Update to latest TinyDTLS submodule as defined for libcoap
-WITH_TINYDTLS_BRANCH=f1d47d533b70ac10e4ff0ae3a088dfe4f265d242
+WITH_TINYDTLS_BRANCH=4a6a78236043da7f8af9ad7be8488aeed6884eda
 
 # Need to determine which library clock_gettime() resides in (as found by ./autogen.sh)
 LDLIBS := $(shell if [ -f $(libcoap_dir)/config.log ] ; then \
@@ -29,10 +28,8 @@ LDLIBS := $(shell if [ -f $(libcoap_dir)/config.log ] ; then \
 # some of the built objects.
 #
 all: lwip \
-     lwip-contrib \
      check-version \
      check-tinydtls \
-     $(coap_include_dir)/coap.h \
      lib-server \
      server \
      lib-client \
@@ -47,11 +44,6 @@ lwip:
 	(cd lwip ; git checkout $(WITH_LWIP_BRANCH))
 	$(MAKE)
 
-lwip-contrib:
-	git clone --depth 1 https://git.savannah.nongnu.org/git/lwip/lwip-contrib.git -b $(WITH_LWIP_CONTRIB_BRANCH)
-	(cd lwip-contrib ; git checkout $(WITH_LWIP_CONTRIB_BRANCH))
-	$(MAKE)
-
 check-version:
 	@(if [ -d lwip ] ; then \
 		cd lwip ; \
@@ -61,18 +53,6 @@ check-version:
 				echo "Updating lwip to ${WITH_LWIP_BRANCH}" ; \
 				cd .. ; \
 				rm -rf lwip ; \
-				${MAKE}; \
-			fi ; \
-		fi ; \
-	fi)
-	@(if [ -d lwip-contrib ] ; then \
-		cd lwip-contrib ; \
-		TAG=`git describe --tags`; \
-		if [ "$$TAG" != ${WITH_LWIP_CONTRIB_BRANCH} ] ; then \
-			if [ "$$TAG" != "tags/${WITH_LWIP_CONTRIB_BRANCH}" ] ; then \
-				echo "Updating lwip-contib to ${WITH_LWIP_CONTRIB_BRANCH}" ; \
-				cd .. ; \
-				rm -rf lwip-contrib ; \
 				${MAKE}; \
 			fi ; \
 		fi ; \
@@ -114,21 +94,21 @@ check-tinydtls:
 		${MAKE} ; \
 	fi)
 
-# lwip and coap opts (include early to shadow the lwip-contrib/ports/unix/proj/minimal/ file and any ../../config.h)
+# lwip and coap opts (include early to shadow the lwip/contrib/ports/unix/proj/minimal/ file and any ../../config.h)
 CFLAGS += -DWITH_LWIP -iquote./config $(EXTRA_CFLAGS)
 
 # lwip library
 
 CFLAGS += -Ilwip/src/include/ -Ilwip/src/include/ipv4/ \
-	  -Ilwip-contrib/ports/unix/port/include/ \
-	  -Ilwip-contrib/ports/unix/proj/minimal/
+	  -Ilwip/contrib/ports/unix/port/include/ \
+	  -Ilwip/contrib/ports/unix/proj/minimal/
 
 LWIP_SRC = def.c init.c tapif.c etharp.c netif.c timeouts.c stats.c udp.c \
 	   tcp.c pbuf.c ip4_addr.c ip4.c inet_chksum.c tcp_in.c tcp_out.c \
-	   icmp.c raw.c ip4_frag.c sys_arch.c ethernet.c ip.c mem.c memp.c
-vpath %.c lwip/src/core/ lwip-contrib/ports/unix/proj/minimal/ \
-	  lwip/src/netif/ lwip/src/core/ipv4/ lwip-contrib/ports/unix/port/ \
-	  lwip-contrib/ports/unix/port/netif/
+	   icmp.c raw.c ip4_frag.c sys_arch.c ethernet.c ip.c mem.c memp.c tcpip.c
+vpath %.c lwip/src/core/ lwip/contrib/ports/unix/proj/minimal/ \
+	  lwip/src/netif/ lwip/src/core/ipv4/ lwip/contrib/ports/unix/port/ \
+	  lwip/contrib/ports/unix/port/netif/ lwip/src/api/
 # CFLAGS += -DLWIP_UNIX_LINUX
 
 # if ipv6 is used
@@ -166,12 +146,16 @@ COAP_SRC = coap_address.c \
 	   coap_option.c \
 	   coap_oscore.c \
 	   coap_pdu.c \
+	   coap_prng.c \
+	   coap_proxy.c \
 	   coap_resource.c \
 	   coap_session.c \
-	   coap_subscribe.c \
-	   coap_tinydtls.c \
+	   coap_sha1.c \
 	   coap_str.c \
+	   coap_subscribe.c \
 	   coap_tcp.c \
+	   coap_threadsafe.c \
+	   coap_tinydtls.c \
 	   coap_uri.c \
 	   coap_ws.c
 
@@ -219,13 +203,7 @@ SN_OBJS = ${SN_APP_OBJ} ${SN_LWIP_OBJ} ${SN_COAP_OBJ}
 CD_OBJS = ${CD_APP_OBJ} ${CD_LWIP_OBJ} ${CD_COAP_OBJ} ${CD_DTLS_OBJ}
 SD_OBJS = ${SD_APP_OBJ} ${SD_LWIP_OBJ} ${SD_COAP_OBJ} ${SD_DTLS_OBJ}
 
-$(coap_include_dir)/coap.h:
-	@(if [ ! -f $(coap_include_dir)/coap.h  ] ; then \
-		(cd $(libcoap_dir) ; ./autogen.sh ; ./configure --disable-dtls --disable-man) ; \
-		${MAKE}; \
-	fi)
-
-${SN_OBJS} ${SD_OBJS}: $(coap_include_dir)/coap.h server-coap.h
+${SN_OBJS} ${SD_OBJS}: server-coap.h
 
 server: ${SN_OBJS}
 	$(CC) $(CFLAGS) ${SN_OBJS} -o server ${LDLIBS}
@@ -233,7 +211,7 @@ server: ${SN_OBJS}
 server-dtls: ${SD_OBJS}
 	$(CC) $(CFLAGS) ${SD_OBJS} -o server-dtls ${LDLIBS}
 
-${CN_OBJS} ${CD_OBJS}: $(coap_include_dir)/coap.h client-coap.h
+${CN_OBJS} ${CD_OBJS}: client-coap.h
 
 client: ${CN_OBJS}
 	$(CC) $(CFLAGS) ${CN_OBJS} -o client ${LDLIBS}

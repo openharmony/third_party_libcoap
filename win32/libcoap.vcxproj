@@ -61,14 +61,18 @@
     <ClCompile Include="..\src\coap_oscore.c" />
     <ClCompile Include="..\src\coap_pdu.c" />
     <ClCompile Include="..\src\coap_prng.c" />
+    <ClCompile Include="..\src\coap_proxy.c" />
     <ClCompile Include="..\src\coap_resource.c" />
     <ClCompile Include="..\src\coap_session.c" />
+    <ClCompile Include="..\src\coap_sha1.c" />
     <ClCompile Include="..\src\coap_str.c" />
     <ClCompile Include="..\src\coap_subscribe.c" />
     <ClCompile Include="..\src\coap_time.c" />
     <ClCompile Include="..\src\coap_tcp.c" />
+    <ClCompile Include="..\src\coap_threadsafe.c" />
     <ClCompile Include="..\src\coap_tinydtls.c" />
     <ClCompile Include="..\src\coap_uri.c" />
+    <ClCompile Include="..\src\coap_wolfssl.c" />
     <ClCompile Include="..\src\coap_ws.c" />
     <ClCompile Include="..\src\oscore\oscore.c" />
     <ClCompile Include="..\src\oscore\oscore_cbor.c" />
@@ -81,38 +85,50 @@
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\libcoap.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_address.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_asn1_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_async.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_async_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_block.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_block_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_cache.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_cache_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_crypto_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_debug.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_debug_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_dtls.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_dtls_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_encode.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_event.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_forward_decls.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_hashkey_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_io.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_io_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_layers_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_mem.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_mutex_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_net.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_net_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_netif_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_option.h" />
-    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_pdu.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_oscore.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_oscore_internal.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_pdu.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_pdu_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_prng.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_prng_internal.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_proxy.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_resource.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_resource_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_session.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_session_internal.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_sha1_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_str.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_subscribe.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_subscribe_internal.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_supported.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_tcp_internal.h" />
+    <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_threadsafe_internal.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_time.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_uri.h" />
     <ClInclude Include="..\$(LibCoAPIncludeDir)\coap_uri_internal.h" />
@@ -372,7 +388,7 @@ TYPE %(FullPath) &gt;&gt; "$(IntDir)$(TargetName).def"</Command>
     </Link>
     <PreBuildEvent>
       <Command>copy /Y ..\coap_config.h.windows ..\coap_config.h
-copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</Command>
+copy /Y ..\coap_config.h.windows ..\$(LibCoAPIncludeDir)\coap_defines.h</Command>
     </PreBuildEvent>
     <PreBuildEvent>
       <Message>Copying config files for windows</Message>
@@ -415,7 +431,7 @@ copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</C
     </Link>
     <PreBuildEvent>
       <Command>copy /Y ..\coap_config.h.windows ..\coap_config.h
-copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</Command>
+copy /Y ..\coap_config.h.windows ..\$(LibCoAPIncludeDir)\coap_defines.h</Command>
     </PreBuildEvent>
     <PreBuildEvent>
       <Message>Copying config files for windows</Message>
@@ -455,7 +471,7 @@ copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</C
     </Link>
     <PreBuildEvent>
       <Command>copy /Y ..\coap_config.h.windows ..\coap_config.h
-copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</Command>
+copy /Y ..\coap_config.h.windows ..\$(LibCoAPIncludeDir)\coap_defines.h</Command>
       <Message>Copying config files for windows</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
@@ -480,7 +496,7 @@ copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</C
     </Link>
     <PreBuildEvent>
       <Command>copy /Y ..\coap_config.h.windows ..\coap_config.h
-copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</Command>
+copy /Y ..\coap_config.h.windows ..\$(LibCoAPIncludeDir)\coap_defines.h</Command>
       <Message>Copying config files for windows</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
@@ -503,7 +519,7 @@ copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</C
     </Link>
     <PreBuildEvent>
       <Command>copy /Y ..\coap_config.h.windows ..\coap_config.h
-copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</Command>
+copy /Y ..\coap_config.h.windows ..\$(LibCoAPIncludeDir)\coap_defines.h</Command>
     </PreBuildEvent>
     <PreBuildEvent>
       <Message>Copying config files for windows</Message>
@@ -548,7 +564,7 @@ copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</C
     </Link>
     <PreBuildEvent>
       <Command>copy /Y ..\coap_config.h.windows ..\coap_config.h
-copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</Command>
+copy /Y ..\coap_config.h.windows ..\$(LibCoAPIncludeDir)\coap_defines.h</Command>
     </PreBuildEvent>
     <PreBuildEvent>
       <Message>Copying config files for windows</Message>
@@ -590,7 +606,7 @@ copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</C
     </Link>
     <PreBuildEvent>
       <Command>copy /Y ..\coap_config.h.windows ..\coap_config.h
-copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</Command>
+copy /Y ..\coap_config.h.windows ..\$(LibCoAPIncludeDir)\coap_defines.h</Command>
       <Message>Copying config files for windows</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
@@ -618,7 +634,7 @@ copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</C
     </Link>
     <PreBuildEvent>
       <Command>copy /Y ..\coap_config.h.windows ..\coap_config.h
-copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</Command>
+copy /Y ..\coap_config.h.windows ..\$(LibCoAPIncludeDir)\coap_defines.h</Command>
       <Message>Copying config files for windows</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
@@ -642,7 +658,7 @@ copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</C
     </Link>
     <PreBuildEvent>
       <Command>copy /Y ..\coap_config.h.windows ..\coap_config.h
-copy /Y ..\$(LibCoAPIncludeDir)\coap.h.windows ..\$(LibCoAPIncludeDir)\coap.h</Command>
+copy /Y ..\coap_config.h.windows ..\$(LibCoAPIncludeDir)\coap_defines.h</Command>
       <Message>Copying config files for windows</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>

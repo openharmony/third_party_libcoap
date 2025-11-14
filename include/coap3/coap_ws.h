@@ -1,8 +1,8 @@
 /*
  * coap_ws.h -- WebSockets Transport Layer Support for libcoap
  *
- * Copyright (C) 2023 Olaf Bergmann <bergmann@tzi.org>
- * Copyright (C) 2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2023-2024 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2023-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -24,20 +24,6 @@
  * API for interfacing with WebSockets (RFC8323)
  * @{
  */
-
-/**
- * Check whether WebSockets is available.
- *
- * @return @c 1 if support for WebSockets is available, or @c 0 otherwise.
- */
-int coap_ws_is_supported(void);
-
-/**
- * Check whether Secure WebSockets is available.
- *
- * @return @c 1 if support for Secure WebSockets is available, or @c 0 otherwise.
- */
-int coap_wss_is_supported(void);
 
 /**
  * Set the host for the HTTP Host: Header in the WebSockets Request.

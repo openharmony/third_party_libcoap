@@ -1,6 +1,6 @@
 /* coap_hashkey.c -- definition of hash key type and helper functions
  *
- * Copyright (C) 2010,2011 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -13,7 +13,7 @@
  * @brief Hashkey functions
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
 void
 coap_hash_impl(const unsigned char *s, size_t len, coap_key_t h) {

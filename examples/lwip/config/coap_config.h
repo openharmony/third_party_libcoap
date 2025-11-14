@@ -1,7 +1,7 @@
 /*
- * coap_config.h.lwip -- LwIP configuration for libcoap
+ * coap_config.h -- LwIP configuration for libcoap
  *
- * Copyright (C) 2021-2023 Olaf Bergmann <bergmann@tzi.org> and others
+ * Copyright (C) 2021-2024 Olaf Bergmann <bergmann@tzi.org> and others
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -33,7 +33,11 @@
 
 #ifndef COAP_DISABLE_TCP
 /* Define to 1 to build without TCP support. */
+#if LWIP_TCP
+#define COAP_DISABLE_TCP 0
+#else /* ! LWIP_TCP */
 #define COAP_DISABLE_TCP 1
+#endif /* ! LWIP_TCP */
 #endif
 
 #ifndef COAP_ASYNC_SUPPORT
@@ -56,11 +60,49 @@
 #define COAP_Q_BLOCK_SUPPORT 0
 #endif
 
-#define PACKAGE_NAME "libcoap"
-#define PACKAGE_VERSION "4.3.4"
-#define PACKAGE_STRING "libcoap 4.3.4"
+#ifndef COAP_THREAD_SAFE
+/* Define to 1 if libcoap has thread safe support. */
+#define COAP_THREAD_SAFE 0
+#endif
 
+#ifndef COAP_THREAD_RECURSIVE_CHECK
+/* Define to 1 to build with thread recursive lock detection support. */
+#define COAP_THREAD_RECURSIVE_CHECK 0
+#endif
+
+#ifndef PACKAGE_BUGREPORT
+/* Define to the address where bug reports for this package should be sent. */
+#define PACKAGE_BUGREPORT "libcoap-developers@lists.sourceforge.net"
+#endif /* PACKAGE_BUGREPORT */
+
+#ifndef PACKAGE_NAME
+/* Define to the full name of this package. */
+#define PACKAGE_NAME "libcoap"
+#endif /* PACKAGE_NAME */
+
+#ifndef PACKAGE_STRING
+/* Define to the full name and version of this package. */
+#define PACKAGE_STRING "libcoap 4.3.5"
+#endif /* PACKAGE_STRING */
+
+#ifndef PACKAGE_TARNAME
+/* Define to the one symbol short name of this package. */
+#define PACKAGE_TARNAME "libcoap"
+#endif /* PACKAGE_TARNAME */
+
+#ifndef PACKAGE_URL
+/* Define to the home page for this package. */
+#define PACKAGE_URL "https://libcoap.net/"
+#endif /* PACKAGE_URL */
+
+#ifndef PACKAGE_VERSION
+/* Define to the version of this package. */
+#define PACKAGE_VERSION "4.3.5"
+#endif /* PACKAGE_VERSION */
+
+#ifndef assert
 #define assert(x) LWIP_ASSERT("CoAP assert failed", x)
+#endif /* assert */
 
 /* it's just provided by libc. i hope we don't get too many of those, as
  * actually we'd need autotools again to find out what environment we're

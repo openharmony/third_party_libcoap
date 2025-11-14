@@ -1,8 +1,8 @@
 /*
  * coap.h -- main header file for CoAP stack of libcoap
  *
- * Copyright (C) 2010-2012,2015-2023 Olaf Bergmann <bergmann@tzi.org>
- *               2015 Carsten Schoenert <c.schoenert@t-online.de>
+ * Copyright (C) 2010-2012,2015-2024 Olaf Bergmann <bergmann@tzi.org>
+ *               2015                Carsten Schoenert <c.schoenert@t-online.de>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -25,23 +25,26 @@
 #define LIBCOAP_PACKAGE_NAME "libcoap"
 
 /* Define the full name and version of libcoap. */
-#define LIBCOAP_PACKAGE_STRING "libcoap 4.3.4"
+#define LIBCOAP_PACKAGE_STRING "libcoap 4.3.5"
 
 /* Define the home page for libcoap. */
 #define LIBCOAP_PACKAGE_URL "https://libcoap.net/"
 
 /* Define the version of libcoap this file belongs to. */
-#define LIBCOAP_PACKAGE_VERSION "4.3.4"
+#define LIBCOAP_PACKAGE_VERSION "4.3.5"
 
 /* Define the numeric version identifier for libcoap */
-#define LIBCOAP_VERSION (4003004U)
+#define LIBCOAP_VERSION (4003005ULL)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include "coap3/libcoap.h"
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
 #include "securec.h"
+#endif
+
 #include "coap3/coap_forward_decls.h"
 #include "coap3/coap_address.h"
 #include "coap3/coap_async.h"
@@ -52,21 +55,26 @@ extern "C" {
 #include "coap3/coap_encode.h"
 #include "coap3/coap_event.h"
 #include "coap3/coap_io.h"
-#include "coap3/coap_internal.h"
-#include "coap3/coap_layers_internal.h"
 #include "coap3/coap_mem.h"
 #include "coap3/coap_net.h"
-#include "coap3/coap_netif_internal.h"
 #include "coap3/coap_option.h"
 #include "coap3/coap_oscore.h"
 #include "coap3/coap_pdu.h"
 #include "coap3/coap_prng.h"
+#include "coap3/coap_proxy.h"
 #include "coap3/coap_resource.h"
 #include "coap3/coap_str.h"
 #include "coap3/coap_subscribe.h"
+#include "coap3/coap_supported.h"
 #include "coap3/coap_time.h"
 #include "coap3/coap_uri.h"
 #include "coap3/coap_ws.h"
+
+#ifdef COAP_SUPPORT_SOCKET_BROADCAST
+#include "coap3/coap_internal.h"
+#include "coap3/coap_layers_internal.h"
+#include "coap3/coap_netif_internal.h"
+#endif
 
 #ifdef __cplusplus
 }

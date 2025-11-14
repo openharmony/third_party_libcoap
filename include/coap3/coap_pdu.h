@@ -2,7 +2,7 @@
  * coap_pdu.h -- CoAP message structure
  *
  * Copyright (C) 2010-2014 Olaf Bergmann <bergmann@tzi.org>
- * Copyright (C) 2021-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2021-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -34,10 +34,10 @@
  * @{
  */
 
- #ifndef COAP_USER_DEFAULT_PORT
- #define COAP_USER_DEFAULT_PORT 5683 /* CoAP default UDP/TCP port */
- #endif
- #define COAP_DEFAULT_PORT COAP_USER_DEFAULT_PORT
+#ifndef COAP_USER_DEFAULT_PORT
+#define COAP_USER_DEFAULT_PORT 5683 /* CoAP default UDP/TCP port */
+#endif
+#define COAP_DEFAULT_PORT COAP_USER_DEFAULT_PORT
 
 #define COAPS_DEFAULT_PORT     5684 /* CoAP default UDP/TCP port for secure transmission */
 #define COAP_DEFAULT_MAX_AGE     60 /* default maximum object lifetime in seconds */
@@ -58,7 +58,11 @@
 
 /* Extended Token constants */
 #define COAP_TOKEN_DEFAULT_MAX 8
-#define COAP_TOKEN_EXT_MAX 65804 /* 13 + 256 + 65535 */
+#if (UINT_MAX > 65804UL)
+#define COAP_TOKEN_EXT_MAX 65804UL /* 13 + 256 + 65535 */
+#else /* UINT_MAX < 65804UL */
+#define COAP_TOKEN_EXT_MAX 4096
+#endif /* UINT_MAX < 65804UL */
 
 /* CoAP message types */
 
@@ -145,7 +149,11 @@ typedef enum coap_request_t {
 #define COAP_OPTION_NORESPONSE    258 /* _U-_E_U, uint,      0-1 B, RFC7967 */
 #define COAP_OPTION_RTAG          292 /* ___RE_U, opaque,    0-8 B, RFC9175 */
 
+#if (UINT_MAX > 65535)
 #define COAP_MAX_OPT            65535 /**< the highest option number we know */
+#else /* UINT_MAX <= 65535 */
+#define COAP_MAX_OPT            65534 /**< the highest option number we know */
+#endif /* UINT_MAX <= 65535 */
 
 /* CoAP result codes (HTTP-Code / 100 * 40 + HTTP-Code % 100) */
 
@@ -392,8 +400,8 @@ coap_pdu_t *coap_pdu_init(coap_pdu_type_t type, coap_pdu_code_t code,
  *
  * @return The skeletal PDU or @c NULL if failure.
  */
-coap_pdu_t *coap_new_pdu(coap_pdu_type_t type, coap_pdu_code_t code,
-                         coap_session_t *session);
+COAP_API coap_pdu_t *coap_new_pdu(coap_pdu_type_t type, coap_pdu_code_t code,
+                                  coap_session_t *session);
 
 /**
  * Dispose of an CoAP PDU and frees associated storage.
@@ -418,11 +426,11 @@ void coap_delete_pdu(coap_pdu_t *pdu);
  *
  * @return The duplicated PDU or @c NULL if failure.
  */
-coap_pdu_t *coap_pdu_duplicate(const coap_pdu_t *old_pdu,
-                               coap_session_t *session,
-                               size_t token_length,
-                               const uint8_t *token,
-                               coap_opt_filter_t *drop_options);
+COAP_API coap_pdu_t *coap_pdu_duplicate(const coap_pdu_t *old_pdu,
+                                        coap_session_t *session,
+                                        size_t token_length,
+                                        const uint8_t *token,
+                                        coap_opt_filter_t *drop_options);
 
 /**
  * Parses @p data into the CoAP PDU structure given in @p result.

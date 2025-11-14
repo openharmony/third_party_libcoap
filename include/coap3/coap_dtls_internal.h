@@ -1,8 +1,9 @@
 /*
  * coap_dtls_internal.h -- (Datagram) Transport Layer Support for libcoap
  *
- * Copyright (C) 2016 Olaf Bergmann <bergmann@tzi.org>
- * Copyright (C) 2017 Jean-Claude Michelou <jcm@spinetix.com>
+ * Copyright (C) 2016      Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2017      Jean-Claude Michelou <jcm@spinetix.com>
+ * Copyright (C) 2023-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -39,8 +40,21 @@
 
 /* For RFC9146 Connection ID support */
 #ifndef COAP_DTLS_CID_LENGTH
-#define COAP_DTLS_CID_LENGTH 6
+#define COAP_DTLS_CID_LENGTH 8
 #endif
+
+typedef enum {
+  COAP_DEFINE_KEY_CA,
+  COAP_DEFINE_KEY_ROOT_CA,
+  COAP_DEFINE_KEY_PUBLIC,
+  COAP_DEFINE_KEY_PRIVATE
+} coap_define_issue_key_t;
+
+typedef enum {
+  COAP_DEFINE_FAIL_BAD,
+  COAP_DEFINE_FAIL_NOT_SUPPORTED,
+  COAP_DEFINE_FAIL_NONE
+} coap_define_issue_fail_t;
 
 /**
  * Creates a new DTLS context for the given @p coap_context. This function
@@ -75,7 +89,7 @@ int coap_dtls_context_set_spsk(coap_context_t *coap_context,
  *
  * @param coap_context The CoAP context.
  * @param setup_data A structure containing setup data originally passed into
- *                   coap_new_client_session_psk2().
+ *                   coap_new_client_session_psk2_lkd().
  *
  * @return @c 1 if successful, else @c 0.
  */
@@ -440,6 +454,43 @@ void coap_dtls_shutdown(void);
  */
 void *coap_dtls_get_tls(const coap_session_t *session,
                         coap_tls_library_t *tls_lib);
+
+/**
+ * Map the PKI key definitions to the new DEFINE format.
+ *
+ * @param setup_data The PKI definition.
+ * @param key Updated with the DEFINE format of the key definitions.
+ *
+ */
+void coap_dtls_map_key_type_to_define(const coap_dtls_pki_t *setup_data,
+                                      coap_dtls_key_t *key);
+
+/**
+ * Report PKI DEFINE type issue
+ *
+ * @param type The type of key with the issue.
+ * @param fail Why the key is failing.
+ * @param key The key with the issue.
+ * @param role Whether this is for the Client or Server.
+ * @param ret Value to return.
+ *
+ * @return @c 0 as there is a failure.
+ */
+int coap_dtls_define_issue(coap_define_issue_key_t type,
+                           coap_define_issue_fail_t fail,
+                           coap_dtls_key_t *key,
+                           const coap_dtls_role_t role,
+                           int ret);
+
+/**
+ * Set the Connection ID client tuple frequency change for testing CIDs.
+ *
+ * @param context        The coap_context_t object.
+ * @param every          Change the client's source port @p every packets sent.
+ *
+ * @return @c 1 if frequency change set (CID supported), else @c 0.
+ */
+int coap_dtls_set_cid_tuple_change(coap_context_t *context, uint8_t every);
 
 /** @} */
 

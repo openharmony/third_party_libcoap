@@ -63,7 +63,8 @@ coap_cache_app_data_free_callback_t _callback_);*
 
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -204,10 +205,14 @@ but the old data will not get freed off.
 The _callback_ handler function prototype is defined as:
 [source, c]
 ----
+/**
+ * Callback to free off the app data when the cache-entry is
+ * being deleted / freed off.
+ *
+ * @param data  The app data to be freed off.
+ */
 typedef void (*coap_cache_app_data_free_callback_t)(void *data);
 ----
-where _data_ is passed into the callback function whenever the Cache Entry is
-deleted.
 
 *Function: coap_cache_get_app_data()*
 
@@ -244,7 +249,7 @@ static int example_data_media_type = COAP_MEDIATYPE_TEXT_PLAIN;
 
 static void
 cache_free_app_data(void *data) {
-  coap_binary_t *bdata = (coap_binary_t*)data;
+  coap_binary_t *bdata = (coap_binary_t *)data;
   coap_delete_binary(bdata);
 }
 
@@ -254,13 +259,12 @@ cache_free_app_data(void *data) {
 
 static void
 hnd_put_example_data(coap_context_t *ctx,
-        coap_resource_t *resource,
-        coap_session_t *session,
-        coap_pdu_t *request,
-        coap_binary_t *token,
-        coap_string_t *query,
-        coap_pdu_t *response
-) {
+                     coap_resource_t *resource,
+                     coap_session_t *session,
+                     coap_pdu_t *request,
+                     coap_binary_t *token,
+                     coap_string_t *query,
+                     coap_pdu_t *response) {
   size_t size;
   const uint8_t *data;
   coap_opt_iterator_t opt_iter;
@@ -275,7 +279,7 @@ hnd_put_example_data(coap_context_t *ctx,
   (void)query;
 
   if (coap_get_data_large(request, &size, &data, &offset, &total) &&
-    size != total) {
+      size != total) {
     /*
      * A part of the data has been received (COAP_BLOCK_SINGLE_BODY not set).
      * However, total unfortunately is only an indication, so it is not safe to
@@ -290,7 +294,7 @@ hnd_put_example_data(coap_context_t *ctx,
      */
     coap_cache_entry_t *cache_entry = coap_cache_get_by_pdu(session,
                                                             request,
-                                              COAP_CACHE_IS_SESSION_BASED);
+                                                            COAP_CACHE_IS_SESSION_BASED);
 
     if (offset == 0) {
       if (!cache_entry) {
@@ -300,10 +304,9 @@ hnd_put_example_data(coap_context_t *ctx,
          * the session is deleted as session_based is set here.
          */
         cache_entry = coap_new_cache_entry(session, request,
-                                         COAP_CACHE_NOT_RECORD_PDU,
-                                         COAP_CACHE_IS_SESSION_BASED, 0);
-      }
-      else {
+                                           COAP_CACHE_NOT_RECORD_PDU,
+                                           COAP_CACHE_IS_SESSION_BASED, 0);
+      } else {
         data_so_far = coap_cache_get_app_data(cache_entry);
         if (data_so_far) {
           coap_delete_binary(data_so_far);
@@ -315,10 +318,9 @@ hnd_put_example_data(coap_context_t *ctx,
     if (!cache_entry) {
       if (offset == 0) {
         coap_log_warn("Unable to create a new cache entry\n");
-      }
-      else {
+      } else {
         coap_log_warn(
-                 "No cache entry available for the non-first BLOCK\n");
+            "No cache entry available for the non-first BLOCK\n");
       }
       coap_pdu_set_code(response, COAP_RESPONSE_CODE_INTERNAL_ERROR);
       return;
@@ -336,14 +338,12 @@ hnd_put_example_data(coap_context_t *ctx,
       /* All the data is now in */
       data_so_far = coap_cache_get_app_data(cache_entry);
       coap_cache_set_app_data(cache_entry, NULL, NULL);
-    }
-    else {
+    } else {
       /* Give us the next block response */
       coap_pdu_set_code(response, COAP_RESPONSE_CODE_CONTINUE);
       return;
     }
-  }
-  else {
+  } else {
     /* single body of data received */
     data_so_far = coap_new_binary(size);
     if (data_so_far) {
@@ -355,19 +355,18 @@ hnd_put_example_data(coap_context_t *ctx,
     /* pre-existed response */
     coap_pdu_set_code(response, COAP_RESPONSE_CODE_CHANGED);
     coap_delete_binary(example_data_ptr);
-  }
-  else
+  } else {
     /* just generated response */
     coap_pdu_set_code(response, COAP_RESPONSE_CODE_CREATED);
+  }
 
   example_data_ptr = data_so_far;
   if ((option = coap_check_option(request, COAP_OPTION_CONTENT_FORMAT,
                                   &opt_iter)) != NULL) {
     example_data_media_type =
-            coap_decode_var_bytes (coap_opt_value (option),
-                                   coap_opt_length (option));
-  }
-  else {
+        coap_decode_var_bytes(coap_opt_value(option),
+                              coap_opt_length(option));
+  } else {
     example_data_media_type = COAP_MEDIATYPE_TEXT_PLAIN;
   }
 
@@ -376,11 +375,12 @@ hnd_put_example_data(coap_context_t *ctx,
 }
 
 int
-main(int argc, char* argv[]) {
+main(int argc, char *argv[]) {
   coap_context_t *ctx = NULL;  /* Set up as normal */
   /* ... */
   uint16_t cache_ignore_options[] = { COAP_OPTION_BLOCK1,
-                                      COAP_OPTION_BLOCK2 };
+                                      COAP_OPTION_BLOCK2
+                                    };
 
   /* Initialize libcoap library */
   coap_startup();
@@ -391,9 +391,9 @@ main(int argc, char* argv[]) {
 
   /* ... */
 
-  /** Define the options to ignore when setting up cache-keys */
+  /* Define the options to ignore when setting up cache-keys */
   coap_cache_ignore_options(ctx, cache_ignore_options,
-             sizeof(cache_ignore_options)/sizeof(cache_ignore_options[0]));
+                            sizeof(cache_ignore_options)/sizeof(cache_ignore_options[0]));
 
   /* ... */
   coap_cleanup();
@@ -418,9 +418,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

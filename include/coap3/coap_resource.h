@@ -1,7 +1,7 @@
 /*
  * coap_resource.h -- generic resource handling
  *
- * Copyright (C) 2010,2011,2014-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010,2011,2014-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -31,13 +31,18 @@
 
 /**
  * Definition of message handler function
+ *
+ * @param resource The resource being requested.
+ * @param session The CoAP session.
+ * @param request The request PDU.
+ * @param query The query string for the resource.
+ * @param response The pre-populated response PDU.
  */
-typedef void (*coap_method_handler_t)
-(coap_resource_t *,
- coap_session_t *,
- const coap_pdu_t * /* request */,
- const coap_string_t * /* query string */,
- coap_pdu_t * /* response */);
+typedef void (*coap_method_handler_t)(coap_resource_t *resource,
+                                      coap_session_t *session,
+                                      const coap_pdu_t *request,
+                                      const coap_string_t *query,
+                                      coap_pdu_t *response);
 
 #define COAP_ATTR_FLAGS_RELEASE_NAME  0x1
 #define COAP_ATTR_FLAGS_RELEASE_VALUE 0x2
@@ -146,6 +151,13 @@ typedef void (*coap_method_handler_t)
 #define COAP_RESOURCE_FLAGS_OSCORE_ONLY 0x400
 
 /**
+ * Define this when invoking *coap_resource_unknown_init2*() if .well-known/core
+ * is to be passed to the unknown URI handler rather than processed locally.
+ * Used for easily passing on a request as a reverse-proxy request.
+ */
+#define COAP_RESOURCE_HANDLE_WELLKNOWN_CORE 0x800
+
+/**
  * Creates a new resource object and initializes the link field to the string
  * @p uri_path. This function returns the new coap_resource_t object.
  *
@@ -214,8 +226,8 @@ coap_resource_t *coap_resource_unknown_init(coap_method_handler_t put_handler);
  * DELETE handler specified for the resource removal) or by maintaining an
  * active resource list.
  *
- * Note: There can only be one unknown resource handler per context - attaching
- *       a new one overrides the previous definition.
+ * Note: There can only be one unknown or reverse-proxy resource handler per
+ *       context - attaching a new one overrides the previous definition.
  *
  * Note: It is not possible to observe the unknown resource with a GET request
  *       - a separate resource needs to be created by the PUT (or POST)
@@ -275,6 +287,25 @@ coap_resource_t *coap_resource_proxy_uri_init2(coap_method_handler_t handler,
                                                int flags);
 
 /**
+ * Creates a new resource object for the reverse-proxy resource handler with
+ * control over multicast request packets.
+ *
+ * Note: There can only be one reverse-proxy or unknown resource handler per
+ *       context - attaching a new one overrides the previous definition.
+ *
+ * This function returns the new coap_resource_t object.
+ *
+ * @param handler The PUT/POST/GET etc. handler that handles all the reverse-proxy
+ *                requests including .well-known-core.
+ * @param flags Zero or more COAP_RESOURCE_FLAGS_*MCAST* ored together to
+ *              indicate what to do with multicast packets.
+ *
+ * @return       A pointer to the new object or @c NULL on error.
+ */
+coap_resource_t *coap_resource_reverse_proxy_init(coap_method_handler_t handler,
+                                                  int flags);
+
+/**
  * Returns the resource identified by the unique string @p uri_path. If no
  * resource was found, this function returns @c NULL.
  *
@@ -283,8 +314,8 @@ coap_resource_t *coap_resource_proxy_uri_init2(coap_method_handler_t handler,
  *
  * @return         A pointer to the resource or @c NULL if not found.
  */
-coap_resource_t *coap_get_resource_from_uri_path(coap_context_t *context,
-                                                 coap_str_const_t *uri_path);
+COAP_API coap_resource_t *coap_get_resource_from_uri_path(coap_context_t *context,
+                                                          coap_str_const_t *uri_path);
 
 /**
  * Get the uri_path from a @p resource.
@@ -349,7 +380,7 @@ void coap_resource_release_userdata_handler(coap_context_t *context,
  * @param context  The context to use.
  * @param resource The resource to store.
  */
-void coap_add_resource(coap_context_t *context, coap_resource_t *resource);
+COAP_API void coap_add_resource(coap_context_t *context, coap_resource_t *resource);
 
 /**
  * Deletes a resource identified by @p resource. The storage allocated for that
@@ -362,7 +393,7 @@ void coap_add_resource(coap_context_t *context, coap_resource_t *resource);
  * @return         @c 1 if the resource was found (and destroyed),
  *                 @c 0 otherwise.
  */
-int coap_delete_resource(coap_context_t *context, coap_resource_t *resource);
+COAP_API int coap_delete_resource(coap_context_t *context, coap_resource_t *resource);
 
 /**
  * Registers the specified @p handler as message handler for the request type
@@ -455,12 +486,13 @@ coap_str_const_t *coap_attr_get_value(coap_attr_t *attribute);
  * COAP_PRINT_STATUS_TRUNC indicates that the output is truncated, i.e. the
  * printing would have exceeded the current buffer.
  */
-typedef unsigned int coap_print_status_t;
+typedef uint32_t coap_print_status_t;
 
-#define COAP_PRINT_STATUS_MASK  0xF0000000u
-#define COAP_PRINT_OUTPUT_LENGTH(v) ((v) & ~COAP_PRINT_STATUS_MASK)
-#define COAP_PRINT_STATUS_ERROR 0x80000000u
-#define COAP_PRINT_STATUS_TRUNC 0x40000000u
+#define COAP_PRINT_STATUS_MASK  0xF0000000UL
+#define COAP_PRINT_STATUS_MAX   0x0FFFFFFFUL
+#define COAP_PRINT_OUTPUT_LENGTH(v) ((v) & COAP_PRINT_STATUS_MAX)
+#define COAP_PRINT_STATUS_ERROR 0x80000000UL
+#define COAP_PRINT_STATUS_TRUNC 0x40000000UL
 
 /**
  * Writes a description of this resource in link-format to given text buffer. @p
@@ -488,24 +520,40 @@ coap_print_status_t coap_print_link(const coap_resource_t *resource,
                                     size_t *len,
                                     size_t *offset);
 
-/** @} */
-
 /**
- * Returns the resource identified by the unique string @p uri_path. If no
- * resource was found, this function returns @c NULL.
+ * Prints the names of all known resources for @p context to @p buf. This function
+ * sets @p buflen to the number of bytes actually written and returns
+ * @c COAP_PRINT_STATUS_ERROR on error. On error, the value in @p buflen is undefined.
+ * Otherwise, the lower 28 bits are set to the number of bytes that have actually
+ * been written. COAP_PRINT_STATUS_TRUNC is set when the output has been truncated.
  *
- * @param context  The context to look for this resource.
- * @param uri_path  The unique string uri of the resource.
+ * @param context The context with the resource map.
+ * @param buf     The buffer to write the result.
+ * @param buflen  Must be initialized to the maximum length of @p buf and will be
+ *                set to the length of the well-known response on return.
+ * @param offset  The offset in bytes where the output shall start and is
+ *                shifted accordingly with the characters that have been
+ *                processed. This parameter is used to support the block
+ *                option.
+ * @param query_filter A filter query according to <a href="http://tools.ietf.org/html/draft-ietf-core-link-format-11#section-4.1">Link Format</a>
  *
- * @return         A pointer to the resource or @c NULL if not found.
+ * @return COAP_PRINT_STATUS_ERROR on error. Otherwise, the lower 28 bits are
+ *         set to the number of bytes that have actually been written to
+ *         @p buf. COAP_PRINT_STATUS_TRUNC is set when the output has been
+ *         truncated.
  */
-coap_resource_t *coap_get_resource_from_uri_path(coap_context_t *context,
-                                                 coap_str_const_t *uri_path);
+COAP_API coap_print_status_t coap_print_wellknown(coap_context_t *context,
+                                                  unsigned char *buf,
+                                                  size_t *buflen,
+                                                  size_t offset,
+                                                  const coap_string_t *query_filter);
+
+/** @} */
 
 /**
  * @deprecated use coap_resource_notify_observers() instead.
  */
-COAP_DEPRECATED int coap_resource_set_dirty(coap_resource_t *r,
-                                            const coap_string_t *query);
+COAP_DEPRECATED COAP_API int coap_resource_set_dirty(coap_resource_t *r,
+                                                     const coap_string_t *query);
 
 #endif /* COAP_RESOURCE_H_ */

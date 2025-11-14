@@ -12,6 +12,8 @@ NAME
 ----
 coap_deprecated,
 coap_clear_event_handler,
+coap_context_get_csm_timeout,
+coap_context_set_csm_timeout,
 coap_context_set_psk,
 coap_encode_var_bytes,
 coap_new_client_session_psk,
@@ -23,7 +25,9 @@ coap_register_handler,
 coap_resource_set_dirty,
 coap_run_once,
 coap_set_event_handler,
-coap_write
+coap_write,
+coap_get_app_data,
+coap_set_app_data
 - Work with CoAP deprecated functions
 
 SYNOPSIS
@@ -31,6 +35,11 @@ SYNOPSIS
 *#include <coap@LIBCOAP_API_VERSION@/coap.h>*
 
 *void coap_clear_event_handler(coap_context_t *_context_);*
+
+*unsigned int coap_context_get_csm_timeout(const coap_context_t *_context_);*
+
+*void coap_context_set_csm_timeout(coap_context_t *_context_,
+unsigned int _csm_timeout_);*
 
 *int coap_context_set_psk(coap_context_t *_context_, const char *_hint_,
 const uint8_t *_key_, size_t _key_len_);*
@@ -64,9 +73,14 @@ coap_event_handler_t _handler_);*
 *unsigned int coap_write(coap_context_t *_context_, coap_socket_t *_sockets_[],
 unsigned int _max_sockets_, unsigned int *_num_sockets_, coap_tick_t _now_);*
 
+*void coap_set_app_data(coap_context_t *_context_, void *_app_data_);*
+
+*void *coap_get_app_data(const coap_context_t *_context_);*
+
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -83,6 +97,16 @@ FUNCTIONS
 
 The *coap_clear_event_handler*() function is replaced by
 *coap_register_event_handler*(3), using NULL for _handler_.
+
+*Function: coap_context_get_csm_timeout()*
+
+The *coap_context_get_csm_timeout*() function is replaced by
+*coap_context_get_csm_timeout_ms*(3) returning milli-secs instead of seconds.
+
+*Function: coap_context_set_csm_timeout()*
+
+The *coap_context_set_csm_timeout*() function is replaced by
+*coap_context_set_csm_timeout_ms*(3) by defining milli-secs instead of seconds.
 
 *Function: coap_context_set_psk()*
 
@@ -146,8 +170,21 @@ The *coap_set_event_handler*() function is replaced by
 The *coap_write*() function is replaced by
 *coap_io_prepare_io*(3).
 
+*Function: coap_set_app_data()*
+
+The *coap_set_app_data*() function is replaced by
+*coap_context_set_app_data*(3).
+
+*Function: coap_get_app_data()*
+
+The *coap_get_app_data*() function is replaced by
+*coap_context_get_app_data*(3).
+
 RETURN VALUES
 -------------
+*coap_context_get_csm_timeout*() returns the seconds to wait for a (TCP) CSM
+negotiation response from the peer.
+
 *coap_context_set_psk*() returns 1 if success, 0 on failure.
 
 *coap_encode_var_bytes*() returns either the length of bytes encoded (which can
@@ -170,10 +207,13 @@ if there was an error.
 *coap_write*() returns the number of milli-seconds that need to be waited
 before the function should next be called.
 
+*coap_get_app_data*() returns a previously defined pointer.
+
 SEE ALSO
 --------
-*coap_endpoint_client*(3), *coap_endpoint_server*(3), *coap_handler*(3),
-*coap_io*(3), *coap_observe*(3), *coap_pdu_access*(3) and *coap_pdu_setup*(3).
+*coap_context*(3), *coap_endpoint_client*(3), *coap_endpoint_server*(3),
+*coap_handler*(3), *coap_io*(3), *coap_observe*(3), *coap_pdu_access*(3) and
+*coap_pdu_setup*(3).
 
 FURTHER INFORMATION
 -------------------
@@ -185,9 +225,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

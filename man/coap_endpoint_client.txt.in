@@ -15,7 +15,8 @@ coap_new_client_session,
 coap_new_client_session_psk2,
 coap_new_client_session_pki,
 coap_session_set_mtu,
-coap_session_max_pdu_size
+coap_session_max_pdu_size,
+coap_mcast_set_hops
 - Work with CoAP client endpoints
 
 SYNOPSIS
@@ -38,9 +39,12 @@ _proto_, coap_dtls_pki_t *_setup_data_);*
 
 *size_t coap_session_max_pdu_size(const coap_session_t *_session_);*
 
+*int coap_mcast_set_hops(coap_session_t *_session_, size_t _hops_);*
+
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -202,6 +206,14 @@ MTU is 1152.
 The *coap_session_max_pdu_size*() function is used to get the maximum MTU
 size of the data for the client endpoint's _session_.
 
+*Function: coap_mcast_set_hops()*
+
+The *coap_mcast_set_hops*() function is used to set the maximum number
+of _hops_ (ttl) that a transmitted multicast packet can pass through before
+getting dropped (default is 1, so that the ttl expires after decrementing
+if the packet is trying to pass out of the local network) for the specified
+_session_.
+
 RETURN VALUES
 -------------
 *coap_new_client_session*(), *coap_new_client_session_psk2*(),
@@ -209,6 +221,8 @@ RETURN VALUES
 session or NULL if there is a creation failure.
 
 *coap_session_max_pdu_size*() returns the MTU size.
+
+*coap_mcast_set_hops*() returns 1 on success, else 0 on failure.
 
 EXAMPLES
 --------
@@ -220,7 +234,7 @@ EXAMPLES
 #include <netinet/in.h>
 
 static coap_session_t *
-setup_client_session (struct in_addr ip_address) {
+setup_client_session(struct in_addr ip_address) {
   coap_session_t *session;
   coap_address_t server;
   /* See coap_context(3) */
@@ -237,7 +251,7 @@ setup_client_session (struct in_addr ip_address) {
   coap_address_init(&server);
   server.addr.sa.sa_family = AF_INET;
   server.addr.sin.sin_addr = ip_address;
-  server.addr.sin.sin_port = htons (5683);
+  server.addr.sin.sin_port = htons(5683);
 
   session = coap_new_client_session(context, NULL, &server, COAP_PROTO_UDP);
   if (!session) {
@@ -259,7 +273,7 @@ setup_client_session (struct in_addr ip_address) {
 #include <unistd.h>
 
 static coap_session_t *
-setup_client_session (const char *server_ud) {
+setup_client_session(const char *server_ud) {
   coap_session_t *session;
   coap_address_t server;
   coap_address_t local;
@@ -302,6 +316,7 @@ setup_client_session (const char *server_ud) {
 ----
 #include <coap@LIBCOAP_API_VERSION@/coap.h>
 
+#include <stdio.h>
 #include <netinet/in.h>
 
 static int
@@ -311,8 +326,7 @@ verify_cn_callback(const char *cn,
                    coap_session_t *c_session,
                    unsigned int depth,
                    int validated,
-                   void *arg
-) {
+                   void *arg) {
   /* Remove (void) definition if variable is used */
   (void)cn;
   (void)asn1_public_cert;
@@ -329,12 +343,14 @@ verify_cn_callback(const char *cn,
   return 1;
 }
 
+static char client_sni[256];
+
 static coap_session_t *
-setup_client_session_pki (struct in_addr ip_address,
-                          const char *public_cert_file,
-                          const char *private_key_file,
-                          const char *ca_file
-) {
+setup_client_session_pki(const char *host,
+                         struct in_addr ip_address,
+                         const char *public_cert_file,
+                         const char *private_key_file,
+                         const char *ca_file) {
   coap_session_t *session;
   coap_address_t server;
   coap_dtls_pki_t dtls_pki;
@@ -352,9 +368,11 @@ setup_client_session_pki (struct in_addr ip_address,
   coap_address_init(&server);
   server.addr.sa.sa_family = AF_INET;
   server.addr.sin.sin_addr = ip_address;
-  server.addr.sin.sin_port = htons (5684);
+  server.addr.sin.sin_port = htons(5684);
 
-  memset (&dtls_pki, 0, sizeof (dtls_pki));
+  memset(&dtls_pki, 0, sizeof(dtls_pki));
+
+  snprintf(client_sni, sizeof(client_sni), "%s", host);
 
   /* See coap_encryption(3) */
   dtls_pki.version                 = COAP_DTLS_PKI_SETUP_VERSION;
@@ -375,7 +393,7 @@ setup_client_session_pki (struct in_addr ip_address,
   dtls_pki.validate_sni_call_back  = NULL;
   dtls_pki.sni_call_back_arg       = NULL;
   dtls_pki.additional_tls_setup_call_back = NULL;
-  dtls_pki.client_sni              = NULL;
+  dtls_pki.client_sni              = client_sni;
   dtls_pki.pki_key.key_type        = COAP_PKI_KEY_PEM;
   dtls_pki.pki_key.key.pem.ca_file = ca_file;
   dtls_pki.pki_key.key.pem.public_cert = public_cert_file;
@@ -407,8 +425,7 @@ setup_client_session_pki (struct in_addr ip_address,
 static const coap_dtls_cpsk_info_t *
 verify_ih_callback(coap_str_const_t *hint,
                    coap_session_t *c_session,
-                   void *arg
-) {
+                   void *arg) {
   coap_dtls_cpsk_info_t *psk_info = (coap_dtls_cpsk_info_t *)arg;
   /* Remove (void) definition if variable is used */
   (void)c_session;
@@ -423,13 +440,12 @@ static coap_dtls_cpsk_t dtls_psk;
 static char client_sni[256];
 
 static coap_session_t *
-setup_client_session_psk (const char *uri,
-                          struct in_addr ip_address,
-                          const uint8_t *identity,
-                          unsigned int identity_len,
-                          const uint8_t *key,
-                          unsigned int key_len
-) {
+setup_client_session_psk(const char *host,
+                         struct in_addr ip_address,
+                         const uint8_t *identity,
+                         unsigned int identity_len,
+                         const uint8_t *key,
+                         unsigned int key_len) {
   coap_session_t *session;
   coap_address_t server;
   /* See coap_context(3) */
@@ -446,24 +462,21 @@ setup_client_session_psk (const char *uri,
   coap_address_init(&server);
   server.addr.sa.sa_family = AF_INET;
   server.addr.sin.sin_addr = ip_address;
-  server.addr.sin.sin_port = htons (5684);
+  server.addr.sin.sin_port = htons(5684);
 
   /* See coap_encryption(3) */
-  memset (&dtls_psk, 0, sizeof(dtls_psk));
+  memset(&dtls_psk, 0, sizeof(dtls_psk));
   dtls_psk.version = COAP_DTLS_CPSK_SETUP_VERSION;
   dtls_psk.validate_ih_call_back = verify_ih_callback;
   dtls_psk.ih_call_back_arg = &dtls_psk.psk_info;
-  if (uri)
-    memcpy(client_sni, uri, min(strlen(uri), sizeof(client_sni)-1));
-  else
-    memcpy(client_sni, "localhost", 9);
+  snprintf(client_sni, sizeof(client_sni), "%s", host);
   dtls_psk.client_sni = client_sni;
   dtls_psk.psk_info.identity.s = identity;
   dtls_psk.psk_info.identity.length = identity_len;
   dtls_psk.psk_info.key.s = key;
   dtls_psk.psk_info.key.length = key_len;
   session = coap_new_client_session_psk2(context, NULL, &server,
-                                        COAP_PROTO_DTLS, &dtls_psk);
+                                         COAP_PROTO_DTLS, &dtls_psk);
   if (!session) {
     coap_free_context(context);
     return NULL;
@@ -481,7 +494,7 @@ setup_client_session_psk (const char *uri,
 #include <netinet/in.h>
 
 static coap_session_t *
-setup_client_session_dtls (struct in_addr ip_address) {
+setup_client_session_dtls(struct in_addr ip_address) {
   coap_session_t *session;
   coap_address_t server;
   /* See coap_context(3) */
@@ -498,10 +511,10 @@ setup_client_session_dtls (struct in_addr ip_address) {
   coap_address_init(&server);
   server.addr.sa.sa_family = AF_INET;
   server.addr.sin.sin_addr = ip_address;
-  server.addr.sin.sin_port = htons (5683);
+  server.addr.sin.sin_port = htons(5683);
 
   session = coap_new_client_session(context, NULL, &server,
-                                        COAP_PROTO_DTLS);
+                                    COAP_PROTO_DTLS);
   if (!session) {
     coap_free_context(context);
     return NULL;
@@ -529,9 +542,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

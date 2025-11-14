@@ -4,8 +4,8 @@
  * coap_oscore.h -- Object Security for Constrained RESTful Environments
  *                  (OSCORE) support for libcoap
  *
- * Copyright (C) 2019-2023 Olaf Bergmann <bergmann@tzi.org>
- * Copyright (C) 2021-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2019-2024 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2021-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -29,13 +29,6 @@
  */
 
 /**
- * Check whether OSCORE is available.
- *
- * @return @c 1 if support for OSCORE is enabled, or @c 0 otherwise.
- */
-int coap_oscore_is_supported(void);
-
-/**
  * Creates a new client session to the designated server, protecting the data
  * using OSCORE.
  *
@@ -54,11 +47,11 @@ int coap_oscore_is_supported(void);
  * @return A new CoAP session or NULL if failed. Call coap_session_release()
  *         to free.
  */
-coap_session_t *coap_new_client_session_oscore(coap_context_t *ctx,
-                                               const coap_address_t *local_if,
-                                               const coap_address_t *server,
-                                               coap_proto_t proto,
-                                               coap_oscore_conf_t *oscore_conf);
+COAP_API coap_session_t *coap_new_client_session_oscore(coap_context_t *ctx,
+                                                        const coap_address_t *local_if,
+                                                        const coap_address_t *server,
+                                                        coap_proto_t proto,
+                                                        coap_oscore_conf_t *oscore_conf);
 
 /**
  * Creates a new client session to the designated server with PSK credentials
@@ -79,12 +72,12 @@ coap_session_t *coap_new_client_session_oscore(coap_context_t *ctx,
  * @return A new CoAP session or NULL if failed. Call coap_session_release()
  *         to free.
  */
-coap_session_t *coap_new_client_session_oscore_psk(coap_context_t *ctx,
-                                                   const coap_address_t *local_if,
-                                                   const coap_address_t *server,
-                                                   coap_proto_t proto,
-                                                   coap_dtls_cpsk_t *psk_data,
-                                                   coap_oscore_conf_t *oscore_conf);
+COAP_API coap_session_t *coap_new_client_session_oscore_psk(coap_context_t *ctx,
+                                                            const coap_address_t *local_if,
+                                                            const coap_address_t *server,
+                                                            coap_proto_t proto,
+                                                            coap_dtls_cpsk_t *psk_data,
+                                                            coap_oscore_conf_t *oscore_conf);
 
 /**
  * Creates a new client session to the designated server with PKI credentials
@@ -105,12 +98,12 @@ coap_session_t *coap_new_client_session_oscore_psk(coap_context_t *ctx,
  * @return A new CoAP session or NULL if failed. Call coap_session_release()
  *         to free.
  */
-coap_session_t *coap_new_client_session_oscore_pki(coap_context_t *ctx,
-                                                   const coap_address_t *local_if,
-                                                   const coap_address_t *server,
-                                                   coap_proto_t proto,
-                                                   coap_dtls_pki_t *pki_data,
-                                                   coap_oscore_conf_t *oscore_conf);
+COAP_API coap_session_t *coap_new_client_session_oscore_pki(coap_context_t *ctx,
+                                                            const coap_address_t *local_if,
+                                                            const coap_address_t *server,
+                                                            coap_proto_t proto,
+                                                            coap_dtls_pki_t *pki_data,
+                                                            coap_oscore_conf_t *oscore_conf);
 
 /**
  * Set the context's default OSCORE configuration for a server.
@@ -121,8 +114,8 @@ coap_session_t *coap_new_client_session_oscore_pki(coap_context_t *ctx,
  *
  * @return @c 1 if successful, else @c 0.
  */
-int coap_context_oscore_server(coap_context_t *context,
-                               coap_oscore_conf_t *oscore_conf);
+COAP_API int coap_context_oscore_server(coap_context_t *context,
+                                        coap_oscore_conf_t *oscore_conf);
 
 /**
  * Definition of the function used to save the current Sender Sequence Number
@@ -176,8 +169,8 @@ int coap_delete_oscore_conf(coap_oscore_conf_t *oscore_conf);
  *
  * @return @c 1 Successfully added, else @c 0 there is an issue.
  */
-int coap_new_oscore_recipient(coap_context_t *context,
-                              coap_bin_const_t *recipient_id);
+COAP_API int coap_new_oscore_recipient(coap_context_t *context,
+                                       coap_bin_const_t *recipient_id);
 
 /**
  * Release all the information associated for the specific Recipient ID
@@ -190,8 +183,8 @@ int coap_new_oscore_recipient(coap_context_t *context,
  *
  * @return @c 1 Successfully removed, else @c 0 not found.
  */
-int coap_delete_oscore_recipient(coap_context_t *context,
-                                 coap_bin_const_t *recipient_id);
+COAP_API int coap_delete_oscore_recipient(coap_context_t *context,
+                                          coap_bin_const_t *recipient_id);
 
 /** @} */
 

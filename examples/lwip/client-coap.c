@@ -2,7 +2,7 @@
  * client-coap.c -- LwIP example
  *
  * Copyright (C) 2013-2016 Christian Amsüss <chrysn@fsfe.org>
- * Copyright (C) 2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2018-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -11,6 +11,7 @@
  */
 
 #include "coap_config.h"
+
 #include <coap3/coap.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -76,7 +77,7 @@ nack_handler(coap_session_t *session COAP_UNUSED,
 
 static int
 resolve_address(const char *host, const char *service, coap_address_t *dst,
-                int scheme_hint_bits) {
+                coap_proto_t *proto, int scheme_hint_bits) {
 
   coap_addr_info_t *addr_info;
   coap_str_const_t str_host;
@@ -92,6 +93,7 @@ resolve_address(const char *host, const char *service, coap_address_t *dst,
   if (addr_info) {
     ret = 1;
     *dst = addr_info->addr;
+    *proto = addr_info->proto;
   }
 
   coap_free_address_info(addr_info);
@@ -118,6 +120,7 @@ client_coap_init(coap_lwip_input_wait_handler_t input_wait, void *input_arg,
   const char *use_psk = "secretPSK";
   const char *use_id = "abc";
   coap_pdu_type_t pdu_type = COAP_MESSAGE_CON;
+  coap_proto_t proto;
 
   /* Initialize libcoap library */
   coap_startup();
@@ -155,40 +158,34 @@ client_coap_init(coap_lwip_input_wait_handler_t input_wait, void *input_arg,
   /* Parse the URI */
   len = coap_split_uri((const unsigned char *)use_uri, strlen(use_uri), &uri);
   LWIP_ASSERT("Failed to parse uri", len == 0);
-  LWIP_ASSERT("Unsupported URI type", uri.scheme == COAP_URI_SCHEME_COAP ||
-              uri.scheme == COAP_URI_SCHEME_COAPS);
-  if (uri.scheme == COAP_URI_SCHEME_COAPS) {
-    LWIP_ASSERT("DTLS not supported", coap_dtls_is_supported());
-  }
 
   snprintf(portbuf, sizeof(portbuf), "%d", uri.port);
   snprintf((char *)buf, sizeof(buf), "%*.*s", (int)uri.host.length,
            (int)uri.host.length, (const char *)uri.host.s);
   /* resolve destination address where server should be sent */
-  len = resolve_address((const char *)buf, portbuf, &dst, 1 << uri.scheme);
+  len = resolve_address((const char *)buf, portbuf, &dst, &proto, 1 << uri.scheme);
   LWIP_ASSERT("Failed to resolve address", len > 0);
 
   main_coap_context = coap_new_context(NULL);
   LWIP_ASSERT("Failed to initialize context", main_coap_context != NULL);
 
   coap_context_set_block_mode(main_coap_context, COAP_BLOCK_USE_LIBCOAP);
+#if NO_SYS
   coap_lwip_set_input_wait_handler(main_coap_context, input_wait, input_arg);
+#else /* ! NO_SYS */
+  (void)input_wait;
+  (void)input_arg;
+#endif /* ! NO_SYS */
 
-  if (uri.scheme == COAP_URI_SCHEME_COAP) {
-    session = coap_new_client_session(main_coap_context, NULL, &dst,
-                                      COAP_PROTO_UDP);
-  } else {
+  if (proto == COAP_PROTO_DTLS || proto == COAP_PROTO_TLS ||
+      proto == COAP_PROTO_WSS) {
     static coap_dtls_cpsk_t dtls_psk;
     static char client_sni[256];
 
-    memset(client_sni, 0, sizeof(client_sni));
     memset(&dtls_psk, 0, sizeof(dtls_psk));
     dtls_psk.version = COAP_DTLS_CPSK_SETUP_VERSION;
-    if (uri.host.length)
-      memcpy(client_sni, uri.host.s,
-             min(uri.host.length, sizeof(client_sni) - 1));
-    else
-      memcpy(client_sni, "localhost", 9);
+    snprintf(client_sni, sizeof(client_sni), "%*.*s", (int)uri.host.length, (int)uri.host.length,
+             uri.host.s);
     dtls_psk.client_sni = client_sni;
     dtls_psk.psk_info.identity.s = (const uint8_t *)use_id;
     dtls_psk.psk_info.identity.length = strlen(use_id);
@@ -197,9 +194,16 @@ client_coap_init(coap_lwip_input_wait_handler_t input_wait, void *input_arg,
 
     session = coap_new_client_session_psk2(main_coap_context, NULL, &dst,
                                            COAP_PROTO_DTLS, &dtls_psk);
+  } else {
+    session = coap_new_client_session(main_coap_context, NULL, &dst,
+                                      proto);
   }
 
   LWIP_ASSERT("Failed to create session", session != NULL);
+
+  if (proto == COAP_PROTO_WS || proto == COAP_PROTO_WSS) {
+    coap_ws_set_host_request(session, &uri.host);
+  }
 
   coap_register_response_handler(main_coap_context, message_handler);
   coap_register_nack_handler(main_coap_context, nack_handler);
@@ -211,8 +215,8 @@ client_coap_init(coap_lwip_input_wait_handler_t input_wait, void *input_arg,
                       coap_session_max_pdu_size(session));
   LWIP_ASSERT("Failed to create PDU", pdu != NULL);
 
-  len = coap_uri_into_options(&uri, &dst, &optlist, 1, buf, sizeof(buf));
-  LWIP_ASSERT("Failed to create options", len == 0);
+  res = coap_uri_into_optlist(&uri, &dst, &optlist, 1);
+  LWIP_ASSERT("Failed to create options", res == 1);
 
   /* Add option list (which will be sorted) to the PDU */
   if (optlist) {
