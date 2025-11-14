@@ -1,7 +1,7 @@
 /*
  * coap_net.h -- CoAP context interface
  *
- * Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -20,7 +20,9 @@
 #include <stdlib.h>
 #include <string.h>
 #ifndef _WIN32
+#ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>
+#endif /* HAVE_SYS_SELECT_H */
 #include <sys/time.h>
 #endif
 #include <time.h>
@@ -55,9 +57,9 @@ typedef enum coap_response_t {
  * @param sent The PDU that was transmitted.
  * @param received The PDU that was received.
  * @param mid CoAP transaction ID.
-
+ *
  * @return @c COAP_RESPONSE_OK if successful, else @c COAP_RESPONSE_FAIL which
- *         triggers sending a RST packet.
+ *         triggers sending a RST packet if the received PDU is a CON or NON.
  */
 typedef coap_response_t (*coap_response_handler_t)(coap_session_t *session,
                                                    const coap_pdu_t *sent,
@@ -147,7 +149,7 @@ void coap_register_pong_handler(coap_context_t *context,
  * @param ctx  The context to use.
  * @param type The option type to register.
  */
-void coap_register_option(coap_context_t *ctx, uint16_t type);
+COAP_API void coap_register_option(coap_context_t *ctx, uint16_t type);
 
 /**
  * Creates a new coap_context_t object that will hold the CoAP stack status.
@@ -168,8 +170,8 @@ coap_context_t *coap_new_context(const coap_address_t *listen_addr);
  *
  * @return @c 1 if successful, else @c 0.
  */
-int coap_context_set_psk(coap_context_t *context, const char *hint,
-                         const uint8_t *key, size_t key_len);
+COAP_API int coap_context_set_psk(coap_context_t *context, const char *hint,
+                                  const uint8_t *key, size_t key_len);
 
 /**
  * Set the context's default PSK hint and/or key for a server.
@@ -180,8 +182,8 @@ int coap_context_set_psk(coap_context_t *context, const char *hint,
  *
  * @return @c 1 if successful, else @c 0.
  */
-int coap_context_set_psk2(coap_context_t *context,
-                          coap_dtls_spsk_t *setup_data);
+COAP_API int coap_context_set_psk2(coap_context_t *context,
+                                   coap_dtls_spsk_t *setup_data);
 
 /**
  * Set the context's default PKI information for a server.
@@ -192,8 +194,8 @@ int coap_context_set_psk2(coap_context_t *context,
  *
  * @return @c 1 if successful, else @c 0.
  */
-int coap_context_set_pki(coap_context_t *context,
-                         const coap_dtls_pki_t *setup_data);
+COAP_API int coap_context_set_pki(coap_context_t *context,
+                                  const coap_dtls_pki_t *setup_data);
 
 /**
  * Set the context's default Root CA information for a client or server.
@@ -206,9 +208,9 @@ int coap_context_set_pki(coap_context_t *context,
  *
  * @return @c 1 if successful, else @c 0.
  */
-int coap_context_set_pki_root_cas(coap_context_t *context,
-                                  const char *ca_file,
-                                  const char *ca_dir);
+COAP_API int coap_context_set_pki_root_cas(coap_context_t *context,
+                                           const char *ca_file,
+                                           const char *ca_dir);
 
 /**
  * Set the context keepalive timer for sessions.
@@ -227,6 +229,16 @@ int coap_context_set_pki_root_cas(coap_context_t *context,
  *                       to disable CoAP-level keepalive messages.
  */
 void coap_context_set_keepalive(coap_context_t *context, unsigned int seconds);
+
+/**
+ * Set the Connection ID client tuple frequency change for testing CIDs.
+ *
+ * @param context        The coap_context_t object.
+ * @param every          Change the client's source port @p every packets sent.
+ *
+ * @return @c 1 if frequency change set (CID supported), else @c 0.
+ */
+int coap_context_set_cid_tuple_change(coap_context_t *context, uint8_t every);
 
 /**
  * Set the maximum token size (RFC8974).
@@ -304,10 +316,12 @@ unsigned int coap_context_get_session_timeout(const coap_context_t *context);
  * 0 (the default) means use wait forever.
  *
  * @param context    The coap_context_t object.
- * @param csm_tmeout The CSM timeout value.
+ * @param csm_timeout The CSM timeout value.
+ *
+ * @deprecated Use coap_context_set_csm_timeout_ms() instead.
  */
-void coap_context_set_csm_timeout(coap_context_t *context,
-                                  unsigned int csm_tmeout);
+COAP_DEPRECATED void coap_context_set_csm_timeout(coap_context_t *context,
+                                                  unsigned int csm_timeout);
 
 /**
  * Get the CSM timeout value
@@ -315,8 +329,31 @@ void coap_context_set_csm_timeout(coap_context_t *context,
  * @param context The coap_context_t object.
  *
  * @return The CSM timeout value.
+ *
+ * @deprecated Use coap_context_get_csm_timeout_ms() instead.
  */
-unsigned int coap_context_get_csm_timeout(const coap_context_t *context);
+COAP_DEPRECATED unsigned int coap_context_get_csm_timeout(const coap_context_t *context);
+
+/**
+ * Set the CSM timeout value. The number of milliseconds to wait for a (TCP) CSM
+ * negotiation response from the peer.
+ * The initial default is 1000 milliseconds.
+ *
+ * @param context        The coap_context_t object.
+ * @param csm_timeout_ms The CSM timeout value in milliseconds (which could get updated
+ *                       to be in the range of 10 - 10000 milliseconds).
+ */
+void coap_context_set_csm_timeout_ms(coap_context_t *context,
+                                     unsigned int csm_timeout_ms);
+
+/**
+ * Get the CSM timeout value
+ *
+ * @param context The coap_context_t object.
+ *
+ * @return The CSM timeout value in millisecs.
+ */
+unsigned int coap_context_get_csm_timeout_ms(const coap_context_t *context);
 
 /**
  * Set the CSM max session size value. The largest PDU that can be received.
@@ -366,7 +403,7 @@ unsigned int coap_context_get_max_handshake_sessions(const coap_context_t *conte
  *
  * @return        Incremented message id in network byte order.
  */
-uint16_t coap_new_message_id(coap_session_t *session);
+COAP_API uint16_t coap_new_message_id(coap_session_t *session);
 
 /**
  * CoAP stack context must be released with coap_free_context(). This function
@@ -376,9 +413,11 @@ uint16_t coap_new_message_id(coap_session_t *session);
  *
  * @param context The current coap_context_t object to free off.
  */
-void coap_free_context(coap_context_t *context);
+COAP_API void coap_free_context(coap_context_t *context);
 
 /**
+ * @deprecated Use coap_context_set_app_data() instead.
+ *
  * Stores @p data with the given CoAP context. This function
  * overwrites any value that has previously been stored with @p
  * context.
@@ -390,6 +429,8 @@ void coap_free_context(coap_context_t *context);
 void coap_set_app_data(coap_context_t *context, void *data);
 
 /**
+ * @deprecated Use coap_context_get_app_data() instead.
+ *
  * Returns any application-specific data that has been stored with @p
  * context using the function coap_set_app_data(). This function will
  * return @c NULL if no data has been stored.
@@ -436,10 +477,10 @@ coap_pdu_t *coap_new_error_response(const coap_pdu_t *request,
  * @return                The message id if the message was sent, or @c
  *                        COAP_INVALID_MID otherwise.
  */
-coap_mid_t coap_send_error(coap_session_t *session,
-                           const coap_pdu_t *request,
-                           coap_pdu_code_t code,
-                           coap_opt_filter_t *opts);
+COAP_API coap_mid_t coap_send_error(coap_session_t *session,
+                                    const coap_pdu_t *request,
+                                    coap_pdu_code_t code,
+                                    coap_opt_filter_t *opts);
 
 /**
  * Helper function to create and send a message with @p type (usually ACK or
@@ -452,8 +493,8 @@ coap_mid_t coap_send_error(coap_session_t *session,
  * @return                message id on success or @c COAP_INVALID_MID
  *                        otherwise.
  */
-coap_mid_t coap_send_message_type(coap_session_t *session, const coap_pdu_t *request,
-                                  coap_pdu_type_t type);
+COAP_API coap_mid_t coap_send_message_type(coap_session_t *session, const coap_pdu_t *request,
+                                           coap_pdu_type_t type);
 
 /**
  * Sends an ACK message with code @c 0 for the specified @p request to @p dst.
@@ -466,7 +507,7 @@ coap_mid_t coap_send_message_type(coap_session_t *session, const coap_pdu_t *req
  * @return                The message id if ACK was sent or @c
  *                        COAP_INVALID_MID on error.
  */
-coap_mid_t coap_send_ack(coap_session_t *session, const coap_pdu_t *request);
+COAP_API coap_mid_t coap_send_ack(coap_session_t *session, const coap_pdu_t *request);
 
 /**
  * Sends an RST message with code @c 0 for the specified @p request to @p dst.
@@ -479,16 +520,7 @@ coap_mid_t coap_send_ack(coap_session_t *session, const coap_pdu_t *request);
  * @return                The message id if RST was sent or @c
  *                        COAP_INVALID_MID on error.
  */
-COAP_STATIC_INLINE coap_mid_t
-coap_send_rst(coap_session_t *session, const coap_pdu_t *request) {
-#ifdef COAP_SUPPORT_SOCKET_BROADCAST
-  coap_log_debug("coap_send_rst disabled\n");
-  /* Return value should not be used with COAP_SUPPORT_SOCKET_BROADCAST enabled */
-  return 0;
-#else
-  return coap_send_message_type(session, request, COAP_MESSAGE_RST);
-#endif
-}
+COAP_API coap_mid_t coap_send_rst(coap_session_t *session, const coap_pdu_t *request);
 
 /**
 * Sends a CoAP message to given peer. The memory that is
@@ -501,7 +533,7 @@ coap_send_rst(coap_session_t *session, const coap_pdu_t *request) {
 * @return                The message id of the sent message or @c
 *                        COAP_INVALID_MID on error.
 */
-coap_mid_t coap_send(coap_session_t *session, coap_pdu_t *pdu);
+COAP_API coap_mid_t coap_send(coap_session_t *session, coap_pdu_t *pdu);
 
 #define coap_send_large(session, pdu) coap_send(session, pdu)
 
@@ -515,9 +547,9 @@ coap_mid_t coap_send(coap_session_t *session, coap_pdu_t *pdu);
  * @return The result from the associated event handler or 0 if none was
  * registered.
  */
-int coap_handle_event(coap_context_t *context,
-                      coap_event_t event,
-                      coap_session_t *session);
+COAP_API int coap_handle_event(coap_context_t *context,
+                               coap_event_t event,
+                               coap_session_t *session);
 /**
  * Returns 1 if there are no messages to send or to dispatch in the context's
  * queues.
@@ -528,7 +560,7 @@ int coap_handle_event(coap_context_t *context,
  *         queued for transmission.  Note that @c 0 does not mean there has
  *         been a response to a transmitted request.
  */
-int coap_can_exit(coap_context_t *context);
+COAP_API int coap_can_exit(coap_context_t *context);
 
 /**
  * Returns the current value of an internal tick counter. The counter counts \c
@@ -547,15 +579,16 @@ void coap_ticks(coap_tick_t *);
  *
  * @return       0 on success, -1 on error
  */
-int coap_join_mcast_group_intf(coap_context_t *ctx, const char *groupname,
-                               const char *ifname);
+COAP_API int coap_join_mcast_group_intf(coap_context_t *ctx, const char *groupname,
+                                        const char *ifname);
 
 #define coap_join_mcast_group(ctx, groupname) \
   (coap_join_mcast_group_intf(ctx, groupname, NULL))
 
 /**
  * Function interface for defining the hop count (ttl) for sending
- * multicast traffic
+ * multicast traffic.  The default is 1 so that the ttl expires after
+ * decrementing if the packet is trying to pass out of the local network.
  *
  * @param session The current session.
  * @param hops    The number of hops (ttl) to use before the multicast
@@ -573,6 +606,26 @@ int coap_mcast_set_hops(coap_session_t *session, size_t hops);
  * @param context The current context.
  */
 void coap_mcast_per_resource(coap_context_t *context);
+
+/**
+ * Stores @p data with the given context. This function overwrites any value
+ * that has previously been stored with @p context.
+ *
+ * @param context The CoAP context.
+ * @param data The pointer to the data to store.
+ */
+void coap_context_set_app_data(coap_context_t *context, void *data);
+
+/**
+ * Returns any application-specific data that has been stored with @p
+ * context using the function coap_context_set_app_data(). This function will
+ * return @c NULL if no data has been stored.
+ *
+ * @param context The CoAP context.
+ *
+ * @return Pointer to the stored data or @c NULL.
+ */
+void *coap_context_get_app_data(const coap_context_t *context);
 
 /**@}*/
 
@@ -614,8 +667,9 @@ void coap_mcast_per_resource(coap_context_t *context);
  * @return Number of milliseconds spent in function or @c -1 if there was
  *         an error
  */
-int coap_io_process(coap_context_t *ctx, uint32_t timeout_ms);
+COAP_API int coap_io_process(coap_context_t *ctx, uint32_t timeout_ms);
 
+#if !defined(RIOT_VERSION) && !defined(WITH_CONTIKI)
 /**
  * The main message processing loop with additional fds for internal select.
  *
@@ -643,9 +697,10 @@ int coap_io_process(coap_context_t *ctx, uint32_t timeout_ms);
  *         if there was an error.  If defined, readfds, writefds, exceptfds
  *         are updated as returned by the internal select() call.
  */
-int coap_io_process_with_fds(coap_context_t *ctx, uint32_t timeout_ms,
-                             int nfds, fd_set *readfds, fd_set *writefds,
-                             fd_set *exceptfds);
+COAP_API int coap_io_process_with_fds(coap_context_t *ctx, uint32_t timeout_ms,
+                                      int nfds, fd_set *readfds, fd_set *writefds,
+                                      fd_set *exceptfds);
+#endif /* ! RIOT_VERSION && ! WITH_CONTIKI */
 
 /**
  * Check to see if there is any i/o pending for the @p context.
@@ -659,16 +714,7 @@ int coap_io_process_with_fds(coap_context_t *ctx, uint32_t timeout_ms,
  *
  * @return @c 1 I/O still pending, @c 0 no I/O pending.
  */
-int coap_io_pending(coap_context_t *context);
-
-/**@}*/
-
-/**
- * @ingroup internal_api
- * @defgroup app_io_internal Application I/O Handling
- * Internal API for Application Input / Output checking
- * @{
- */
+COAP_API int coap_io_pending(coap_context_t *context);
 
 /**
 * Iterates through all the coap_socket_t structures embedded in endpoints or
@@ -703,12 +749,12 @@ int coap_io_pending(coap_context_t *context);
 *                 select() to wait for network events or 0 if wait should be
 *                 forever.
 */
-unsigned int coap_io_prepare_io(coap_context_t *ctx,
-                                coap_socket_t *sockets[],
-                                unsigned int max_sockets,
-                                unsigned int *num_sockets,
-                                coap_tick_t now
-                               );
+COAP_API unsigned int coap_io_prepare_io(coap_context_t *ctx,
+                                         coap_socket_t *sockets[],
+                                         unsigned int max_sockets,
+                                         unsigned int *num_sockets,
+                                         coap_tick_t now
+                                        );
 
 /**
  * Processes any outstanding read, write, accept or connect I/O as indicated
@@ -723,7 +769,7 @@ unsigned int coap_io_prepare_io(coap_context_t *ctx,
  * @param ctx The CoAP context
  * @param now Current time
  */
-void coap_io_do_io(coap_context_t *ctx, coap_tick_t now);
+COAP_API void coap_io_do_io(coap_context_t *ctx, coap_tick_t now);
 
 /**
  * Any now timed out delayed packet is transmitted, along with any packets
@@ -744,7 +790,7 @@ void coap_io_do_io(coap_context_t *ctx, coap_tick_t now);
  *                 epoll_wait() to wait for network events or 0 if wait should be
  *                 forever.
  */
-unsigned int coap_io_prepare_epoll(coap_context_t *ctx, coap_tick_t now);
+COAP_API unsigned int coap_io_prepare_epoll(coap_context_t *ctx, coap_tick_t now);
 
 struct epoll_event;
 
@@ -761,11 +807,12 @@ struct epoll_event;
  * @param nevents The number of events.
  *
  */
-void coap_io_do_epoll(coap_context_t *ctx, struct epoll_event *events,
-                      size_t nevents);
+COAP_API void coap_io_do_epoll(coap_context_t *ctx, struct epoll_event *events,
+                               size_t nevents);
 
 /**@}*/
 
+#if defined(WITH_LWIP) || defined(WITH_LWIP_MAN_CHECK) || defined(__DOXYGEN__)
 /**
  * @ingroup application_api
  * @defgroup lwip LwIP specific API
@@ -811,6 +858,7 @@ void coap_lwip_set_input_wait_handler(coap_context_t *context,
                                       void *input_arg);
 
 /**@}*/
+#endif /* WITH_LWIP || WITH_LWIP_MAN_CHECK || defined(__DOXYGEN__) */
 
 /**
  * @deprecated Use coap_io_process() instead.
@@ -831,10 +879,7 @@ void coap_lwip_set_input_wait_handler(coap_context_t *context,
  * @return Number of milliseconds spent in function or @c -1 if there was
  *         an error
  */
-COAP_STATIC_INLINE COAP_DEPRECATED int
-coap_run_once(coap_context_t *ctx, uint32_t timeout_ms) {
-  return coap_io_process(ctx, timeout_ms);
-}
+#define coap_run_once(ctx, timeout_ms) coap_io_process(ctx, timeout_ms)
 
 /**
 * @deprecated Use coap_io_prepare_io() instead.
@@ -854,15 +899,8 @@ coap_run_once(coap_context_t *ctx, uint32_t timeout_ms) {
 *                 select() to wait for network events or 0 if wait should be
 *                 forever.
 */
-COAP_STATIC_INLINE COAP_DEPRECATED unsigned int
-coap_write(coap_context_t *ctx,
-           coap_socket_t *sockets[],
-           unsigned int max_sockets,
-           unsigned int *num_sockets,
-           coap_tick_t now
-          ) {
-  return coap_io_prepare_io(ctx, sockets, max_sockets, num_sockets, now);
-}
+#define coap_write(ctx, sockets, max_sockets, num_sockets, now) \
+  coap_io_prepare_io(ctx, sockets, max_sockets, num_sockets, now)
 
 /**
  * @deprecated Use coap_io_do_io() instead.
@@ -874,11 +912,7 @@ coap_write(coap_context_t *ctx,
  * @param ctx The CoAP context
  * @param now Current time
  */
-COAP_STATIC_INLINE COAP_DEPRECATED void
-coap_read(coap_context_t *ctx, coap_tick_t now
-         ) {
-  coap_io_do_io(ctx, now);
-}
+#define coap_read(ctx, now) coap_io_do_io(ctx, now)
 
 /* Old definitions which may be hanging around in old code - be helpful! */
 #define COAP_RUN_NONBLOCK COAP_RUN_NONBLOCK_deprecated_use_COAP_IO_NO_WAIT

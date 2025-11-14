@@ -3,7 +3,7 @@
 *
 * Exits with a non-zero value if there is a coding error.
 *
-* Copyright (C) 2020-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+* Copyright (C) 2020-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
 *
 * SPDX-License-Identifier: BSD-2-Clause
 *
@@ -60,9 +60,6 @@ const char *inline_list[] = {
   "coap_option_clrb(",
   "coap_option_getb(",
   "coap_option_setb(",
-  "coap_read(",
-  "coap_run_once(",
-  "coap_write(",
 };
 
 const char *define_list[] = {
@@ -79,6 +76,16 @@ const char *define_list[] = {
   "coap_log_debug(",
   "coap_log_oscore(",
   "coap_dtls_log(",
+  "coap_lock_init(",
+  "coap_lock_lock(",
+  "coap_lock_unlock(",
+  "coap_lock_being_freed(",
+  "coap_lock_check_locked(",
+  "coap_lock_callback(",
+  "coap_lock_callback_release(",
+  "coap_lock_callback_ret(",
+  "coap_lock_callback_ret_release(",
+  "coap_lock_invert(",
 };
 
 /* xxx *function */
@@ -118,7 +125,9 @@ const char *number_list[] = {
   "coap_pdu_type_t ",
   "coap_mid_t ",
   "coap_pdu_code_t ",
+  "coap_print_status_t ",
   "coap_proto_t ",
+  "coap_response_t ",
   "coap_session_state_t ",
   "coap_session_type_t ",
   "int ",
@@ -159,6 +168,9 @@ check_synopsis(const char *file) {
     exit_code = 1;
     return;
   }
+  if (!strcmp(file, "coap_lwip.txt.in")) {
+    fprintf(fpcode, "#define WITH_LWIP_MAN_CHECK\n");
+  }
   fprintf(fpcode, "#include <coap3/coap.h>\n");
   fprintf(fpcode, "#ifdef __GNUC__\n");
   fprintf(fpcode, "#define U __attribute__ ((unused))\n");
@@ -175,6 +187,16 @@ check_synopsis(const char *file) {
   status = system(buffer);
   if (WEXITSTATUS(status)) {
     exit_code = WEXITSTATUS(status);
+    snprintf(buffer, sizeof(buffer), "echo %sc ; cat -n %sc", file_name, file_name);
+    status = system(buffer);
+    if (WEXITSTATUS(status)) {
+      printf("Issues with system() call\n");
+    }
+    snprintf(buffer, sizeof(buffer), "echo tmp/%s.h ; cat -n tmp/%s.h", file, file);
+    status = system(buffer);
+    if (WEXITSTATUS(status)) {
+      printf("Issues with system() call\n");
+    }
   }
   return;
 }
@@ -219,6 +241,7 @@ decode_synopsis_definition(FILE *fpheader, const char *buffer, int in_synopsis) 
   int is_number_func = 0;
   int is_inline_func = 0;
   int is_struct_func = 0;
+  int is_ptr = 0;
   const char *func_start = NULL;
   int is_struct = 0;
   unsigned int i;
@@ -226,6 +249,7 @@ decode_synopsis_definition(FILE *fpheader, const char *buffer, int in_synopsis) 
   if (strncmp(buffer, "*void ", sizeof("*void ")-1) == 0) {
     if (strncmp(buffer, "*void *", sizeof("*void *")-1) == 0) {
       func_start = &buffer[sizeof("*void *")-1];
+      is_ptr = 1;
     } else {
       is_void_func = 1;
       func_start = &buffer[sizeof("*void ")-1];
@@ -237,6 +261,7 @@ decode_synopsis_definition(FILE *fpheader, const char *buffer, int in_synopsis) 
                 strlen(number_list[i])) == 0) {
       if (buffer[1 + strlen(number_list[i])] == '*') {
         func_start = &buffer[2 + strlen(number_list[i])];
+        is_ptr = 1;
       } else {
         is_number_func = 1;
         func_start = &buffer[1 + strlen(number_list[i])];
@@ -250,6 +275,7 @@ decode_synopsis_definition(FILE *fpheader, const char *buffer, int in_synopsis) 
                 strlen(pointer_list[i])) == 0) {
       if (buffer[1 + strlen(pointer_list[i])] == '*') {
         func_start = &buffer[2 + strlen(pointer_list[i])];
+        is_ptr = 1;
       } else {
         is_struct_func = i + 1;
         func_start = &buffer[1 + strlen(pointer_list[i])];
@@ -313,6 +339,19 @@ decode_synopsis_definition(FILE *fpheader, const char *buffer, int in_synopsis) 
   len = strlen(outbuf);
   if (len > 3 && ((outbuf[len-3] == ';' && outbuf[len-2] == '*') ||
                   (outbuf[len-3] == '*' && outbuf[len-2] == ';'))) {
+    if (!is_inline_func && !is_void_func && !is_number_func && !is_struct_func && !is_struct &&
+        !is_ptr) {
+      char *lcp = strchr(buffer, ' ');
+
+      if (lcp)
+        *lcp = '\000';
+      fprintf(stderr,
+              "man/examples-code-check.c: Function return type '%s' undefined in ptr_list[] or number_list[]\n",
+              &buffer[1]);
+      if (lcp)
+        *lcp = ' ';
+      exit_code = 1;
+    }
     if (is_inline_func) {
       strcpy(&outbuf[len-3], ";\n");
     }
@@ -493,14 +532,6 @@ main(int argc, char *argv[]) {
           in_synopsis = 0;
           dump_name_synopsis_mismatch();
           in_functions = 1;
-          snprintf(file_name, sizeof(file_name), "tmp/%s.h",
-                   pdir_ent->d_name);
-          fpheader = fopen(file_name, "w");
-          if (!fpheader) {
-            fprintf(stderr, "fopen: %s: %s (%d)\n", file_name,
-                    strerror(errno), errno);
-            goto bad;
-          }
           continue;
         }
         if (strncmp(buffer, "DESCRIPTION", sizeof("DESCRIPTION")-1) == 0) {
@@ -564,13 +595,8 @@ main(int argc, char *argv[]) {
             fpheader = NULL;
             check_synopsis(pdir_ent->d_name);
           }
-          in_name = 0;
-          in_synopsis = 0;
-          in_return = 0;
           dump_name_synopsis_mismatch();
           dump_return_synopsis_mismatch();
-          in_functions = 0;
-          in_examples = 1;
           break;
         }
 
@@ -759,19 +785,18 @@ main(int argc, char *argv[]) {
           status = system(buffer);
           if (WEXITSTATUS(status)) {
             exit_code = WEXITSTATUS(status);
+            snprintf(buffer, sizeof(buffer), "echo %sc ; cat -n %sc", file_name, file_name);
+            status = system(buffer);
+            if (WEXITSTATUS(status)) {
+              printf("Issues with system() call\n");
+            }
           }
           continue;
         }
         if (fpcode) {
           if (strstr(buffer, "LIBCOAP_API_VERSION")) {
             fprintf(fpcode, "#include <coap3/coap.h>\n");
-            fprintf(fpcode, "#ifdef __GNUC__\n");
-            fprintf(fpcode, "#define U __attribute__ ((unused))\n");
-            fprintf(fpcode, "#else /* not a GCC */\n");
-            fprintf(fpcode, "#define U\n");
-            fprintf(fpcode, "#endif /* GCC */\n");
-            fprintf(fpcode, "#include \"%s.h\"\n", pdir_ent->d_name);
-            fprintf(fpcode, "#undef U\n");
+            fprintf(fpcode, "\n");
             continue;
           }
           fprintf(fpcode, "%s", buffer);

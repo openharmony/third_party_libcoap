@@ -16,8 +16,11 @@
 #include "coap3/coap_resource.h"
 #include "coap3/coap_subscribe.h"
 #ifdef COAP_WITH_LIBTINYDTLS
+
 #ifndef LWIP_TINYDTLS_LOCAL_FIX
 #define LWIP_TINYDTLS_LOCAL_FIX
+
+#if defined(WITH_LWIP_NO_SOCKET)
 #include <lwip/ip_addr.h>
 /* Local copies of struct to simplify #include nightmare */
 typedef struct {
@@ -26,6 +29,11 @@ typedef struct {
   ip_addr_t addr;         /**< session IP address */
   int ifindex;            /**< network interface index */
 } l_session_t;
+#else /* ! WITH_LWIP_NO_SOCKET */
+typedef struct {
+  char dummy[36];
+} l_session_t;
+#endif /* ! WITH_LWIP_NO_SOCKET */
 
 typedef struct l_coap_tiny_context_t {
   struct dtls_context_t *dtls_context;
@@ -43,11 +51,19 @@ typedef struct l_coap_tiny_context_t {
 #endif
 
 #ifndef MEMP_NUM_COAPENDPOINT
+#if COAP_DISABLE_TCP
 #ifdef COAP_WITH_LIBTINYDTLS
 #define MEMP_NUM_COAPENDPOINT 2
 #else /* ! COAP_WITH_LIBTINYDTLS */
 #define MEMP_NUM_COAPENDPOINT 1
 #endif /* ! COAP_WITH_LIBTINYDTLS */
+#else /* ! COAP_DISABLE_TCP */
+#ifdef COAP_WITH_LIBTINYDTLS
+#define MEMP_NUM_COAPENDPOINT 4
+#else /* ! COAP_WITH_LIBTINYDTLS */
+#define MEMP_NUM_COAPENDPOINT 2
+#endif /* ! COAP_WITH_LIBTINYDTLS */
+#endif /* ! COAP_DISABLE_TCP */
 #endif
 
 /* 1 is sufficient as this is very short-lived */
@@ -88,11 +104,19 @@ typedef struct l_coap_tiny_context_t {
 #endif
 
 #ifndef MEMP_NUM_COAPSTRING
-#define MEMP_NUM_COAPSTRING 10
+#define MEMP_NUM_COAPSTRING 12
 #endif
 
 #ifndef MEMP_LEN_COAPSTRING
+#ifdef COAP_WS_SUPPORT
+#define MEMP_LEN_COAPSTRING 176
+#else /* ! COAP_WS_SUPPORT */
+#ifdef COAP_WITH_LIBTINYDTLS
+#define MEMP_LEN_COAPSTRING 120
+#else /* COAP_WITH_TINYDTLS */
 #define MEMP_LEN_COAPSTRING 40
+#endif /* COAP_WITH_TINYDTLS */
+#endif /* ! COAP_WS_SUPPORT */
 #endif
 
 #ifndef MEMP_NUM_COAPCACHE_KEYS

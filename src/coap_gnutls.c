@@ -1,8 +1,8 @@
 /*
  * coap_gnutls.c -- GnuTLS Datagram Transport Layer Support for libcoap
  *
- * Copyright (C) 2017 Dag Bjorklund <dag.bjorklund@comsel.fi>
- * Copyright (C) 2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2017      Dag Bjorklund <dag.bjorklund@comsel.fi>
+ * Copyright (C) 2018-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -48,7 +48,7 @@
  * 3.6.6 or later is required to support Raw Public Key(RPK)
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
 #ifdef COAP_WITH_LIBGNUTLS
 
@@ -243,6 +243,24 @@ coap_dtls_rpk_is_supported(void) {
 #endif /* GNUTLS_VERSION_NUMBER < 0x030606 */
 }
 
+/*
+ * return 0 failed
+ *        1 passed
+ */
+int
+coap_dtls_cid_is_supported(void) {
+  return 0;
+}
+
+#if COAP_CLIENT_SUPPORT
+int
+coap_dtls_set_cid_tuple_change(coap_context_t *c_context, uint8_t every) {
+  (void)c_context;
+  (void)every;
+  return 0;
+}
+#endif /* COAP_CLIENT_SUPPORT */
+
 coap_tls_version_t *
 coap_get_tls_library_version(void) {
   static coap_tls_version_t version;
@@ -295,6 +313,7 @@ int
 coap_dtls_context_set_pki(coap_context_t *c_context,
                           const coap_dtls_pki_t *setup_data,
                           const coap_dtls_role_t role COAP_UNUSED) {
+  coap_dtls_key_t key;
   coap_gnutls_context_t *g_context =
       ((coap_gnutls_context_t *)c_context->dtls_context);
 
@@ -329,7 +348,13 @@ coap_dtls_context_set_pki(coap_context_t *c_context,
       g_context->setup_data.allow_short_rsa_length = 1;
     }
   }
+  /* Map over to the new define format to save code duplication */
+  coap_dtls_map_key_type_to_define(&g_context->setup_data, &key);
+  g_context->setup_data.pki_key = key;
   g_context->psk_pki_enabled |= IS_PKI;
+  if (setup_data->use_cid) {
+    coap_log_warn("GnuTLS has no Connection-ID support\n");
+  }
   return 1;
 }
 
@@ -390,6 +415,9 @@ coap_dtls_context_set_spsk(coap_context_t *c_context,
   if (!g_context || !setup_data)
     return 0;
 
+  if (setup_data->ec_jpake) {
+    coap_log_warn("GnuTLS has no EC-JPAKE support\n");
+  }
   g_context->psk_pki_enabled |= IS_PSK;
   return 1;
 }
@@ -410,6 +438,12 @@ coap_dtls_context_set_cpsk(coap_context_t *c_context,
   if (!g_context || !setup_data)
     return 0;
 
+  if (setup_data->ec_jpake) {
+    coap_log_warn("GnuTLS has no EC-JPAKE support\n");
+  }
+  if (setup_data->use_cid) {
+    coap_log_warn("GnuTLS has no Connection-ID support\n");
+  }
   g_context->psk_pki_enabled |= IS_PSK;
   return 1;
 }
@@ -589,10 +623,10 @@ psk_client_callback(gnutls_session_t g_session,
 
     lhint.length = temp.length;
     lhint.s = temp.s;
-    cpsk_info =
-        setup_data->validate_ih_call_back(&lhint,
-                                          c_session,
-                                          setup_data->ih_call_back_arg);
+    coap_lock_callback_ret(cpsk_info, c_session->context,
+                           setup_data->validate_ih_call_back(&lhint,
+                                                             c_session,
+                                                             setup_data->ih_call_back_arg));
 
     if (cpsk_info == NULL)
       return -1;
@@ -749,13 +783,15 @@ check_rpk_cert(coap_gnutls_context_t *g_context,
     G_CHECK(gnutls_pubkey_export(pcert.pubkey, GNUTLS_X509_FMT_DER, der, &size),
             "gnutls_pubkey_export");
     gnutls_pcert_deinit(&pcert);
-    if (!g_context->setup_data.validate_cn_call_back(COAP_DTLS_RPK_CERT_CN,
-                                                     der,
-                                                     size,
-                                                     c_session,
-                                                     0,
-                                                     1,
-                                                     g_context->setup_data.cn_call_back_arg)) {
+    coap_lock_callback_ret(ret, c_session->context,
+                           g_context->setup_data.validate_cn_call_back(COAP_DTLS_RPK_CERT_CN,
+                               der,
+                               size,
+                               c_session,
+                               0,
+                               1,
+                               g_context->setup_data.cn_call_back_arg));
+    if (!ret) {
       return 0;
     }
   }
@@ -868,6 +904,14 @@ cert_verify_gnutls(gnutls_session_t g_session) {
         }
       }
     }
+    if (status & (GNUTLS_CERT_INSECURE_ALGORITHM)) {
+      status &= ~(GNUTLS_CERT_INSECURE_ALGORITHM);
+      fail = 1;
+      coap_log_warn("   %s: %s: '%s'\n",
+                    coap_session_str(c_session),
+                    "The certificate uses an insecure algorithm",
+                    OUTPUT_CERT_NAME);
+    }
 
     if (status) {
       fail = 1;
@@ -898,13 +942,15 @@ cert_verify_gnutls(gnutls_session_t g_session) {
     G_CHECK(gnutls_x509_crt_export(cert, GNUTLS_X509_FMT_DER, der, &size),
             "gnutls_x509_crt_export");
     gnutls_x509_crt_deinit(cert);
-    if (!g_context->setup_data.validate_cn_call_back(OUTPUT_CERT_NAME,
-                                                     der,
-                                                     size,
-                                                     c_session,
-                                                     0,
-                                                     cert_is_trusted,
-                                                     g_context->setup_data.cn_call_back_arg)) {
+    coap_lock_callback_ret(ret, c_session->context,
+                           g_context->setup_data.validate_cn_call_back(OUTPUT_CERT_NAME,
+                               der,
+                               size,
+                               c_session,
+                               0,
+                               cert_is_trusted,
+                               g_context->setup_data.cn_call_back_arg));
+    if (!ret) {
       alert = GNUTLS_A_ACCESS_DENIED;
       goto fail;
     }
@@ -964,71 +1010,42 @@ pin_callback(void *user_data, int attempt,
              unsigned int flags COAP_UNUSED,
              char *pin,
              size_t pin_max) {
-  coap_dtls_pki_t *setup_data = (coap_dtls_pki_t *)user_data;
+  coap_dtls_key_t *key = (coap_dtls_key_t *)user_data;
 
   /* Only do this on first attempt to prevent token lockout */
-  if (attempt == 0 && setup_data && setup_data->pki_key.key.pkcs11.user_pin) {
-    int len = min(pin_max - 1, strlen(setup_data->pki_key.key.pkcs11.user_pin));
-    memcpy(pin, setup_data->pki_key.key.pkcs11.user_pin, len);
+  if (attempt == 0 && key && key->key.define.user_pin) {
+    int len = min(pin_max - 1, strlen(key->key.define.user_pin));
+
+    memcpy(pin, key->key.define.user_pin, len);
     pin[len] = 0;
     return 0;
   }
   return -1;
 }
-#if (GNUTLS_VERSION_NUMBER >= 0x030606)
-/* first part of Raw public key, this is the start of the Subject Public Key */
-static const unsigned char cert_asn1_header1[] = {
-  0x30, 0x59, /* SEQUENCE, length 89 bytes */
-  0x30, 0x13, /* SEQUENCE, length 19 bytes */
-  0x06, 0x07, /* OBJECT IDENTIFIER ecPublicKey (1 2 840 10045 2 1) */
-  0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01,
-};
-/* PrimeX will get inserted */
-#if 0
-0x06, 0x08, /* OBJECT IDENTIFIER prime256v1 (1 2 840 10045 3 1 7) */
-      0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07,
-#endif
-static const unsigned char cert_asn1_header2[] = {
-  0x03, 0x42, /* BIT STRING, length 66 bytes */
-  /* Note: 0 bits (0x00) and no compression (0x04) are already in the certificate */
-};
 
-static gnutls_datum_t *
-get_asn1_spki(const uint8_t *data, size_t size) {
-  coap_binary_t *pub_key = get_asn1_tag(COAP_ASN1_BITSTRING, data, size, NULL);
-  coap_binary_t *prime = get_asn1_tag(COAP_ASN1_IDENTIFIER, data, size, NULL);
-  gnutls_datum_t *spki = NULL;
-
-  if (pub_key && prime) {
-    size_t header_size = sizeof(cert_asn1_header1) +
-                         2 +
-                         prime->length +
-                         sizeof(cert_asn1_header2);
-    uint8_t *tmp = gnutls_malloc(sizeof(gnutls_datum_t) +
-                                 header_size +
-                                 pub_key->length);
-
-    if (tmp) {
-      spki = (gnutls_datum_t *)tmp;
-      spki->data = &tmp[sizeof(gnutls_datum_t)];
-      memcpy(&spki->data[header_size], pub_key->s, pub_key->length);
-      memcpy(spki->data, cert_asn1_header1, sizeof(cert_asn1_header1));
-      spki->data[sizeof(cert_asn1_header1)] = COAP_ASN1_IDENTIFIER;
-      spki->data[sizeof(cert_asn1_header1)+1] = prime->length;
-      memcpy(&spki->data[sizeof(cert_asn1_header1)+2],
-             prime->s, prime->length);
-      memcpy(&spki->data[sizeof(cert_asn1_header1)+2+prime->length],
-             cert_asn1_header2, sizeof(cert_asn1_header2));
-      spki->size = header_size + pub_key->length;
+static int
+check_null_memory(gnutls_datum_t *datum,
+                  const uint8_t *buf, size_t len, int *alloced) {
+  datum->size = len;
+  *alloced = 0;
+  if (buf[len-1] != '\000') {
+    /* Need to allocate memory, rather than just copying pointers across */
+    *alloced = 1;
+    datum->data = gnutls_malloc(len + 1);
+    if (!datum->data) {
+      coap_log_err("gnutls_malloc failure\n");
+      return GNUTLS_E_MEMORY_ERROR;
     }
+    memcpy(datum->data, buf, len);
+    datum->data[len] = '\000';
+    datum->size++;
+  } else {
+    /* To get around const issue */
+    memcpy(&datum->data,
+           &buf, sizeof(datum->data));
   }
-  if (pub_key)
-    coap_delete_binary(pub_key);
-  if (prime)
-    coap_delete_binary(prime);
-  return spki;
+  return 0;
 }
-#endif /* GNUTLS_VERSION_NUMBER >= 0x030606 */
 
 /*
  * return 0   Success (GNUTLS_E_SUCCESS)
@@ -1039,332 +1056,366 @@ setup_pki_credentials(gnutls_certificate_credentials_t *pki_credentials,
                       gnutls_session_t g_session,
                       coap_gnutls_context_t *g_context,
                       coap_dtls_pki_t *setup_data, coap_dtls_role_t role) {
+  coap_dtls_key_t key;
   int ret;
+  gnutls_datum_t cert;
+  gnutls_datum_t pkey;
+  gnutls_datum_t ca;
+  int alloced_cert_memory = 0;
+  int alloced_pkey_memory = 0;
+  int alloced_ca_memory = 0;
+  int have_done_key = 0;
+
+  /* Map over to the new define format to save code duplication */
+  coap_dtls_map_key_type_to_define(setup_data, &key);
+
+  assert(key.key_type == COAP_PKI_KEY_DEFINE);
 
   G_CHECK(gnutls_certificate_allocate_credentials(pki_credentials),
           "gnutls_certificate_allocate_credentials");
 
-  switch (setup_data->pki_key.key_type) {
-  case COAP_PKI_KEY_PEM:
-    if (setup_data->pki_key.key.pem.public_cert &&
-        setup_data->pki_key.key.pem.public_cert[0] &&
-        setup_data->pki_key.key.pem.private_key &&
-        setup_data->pki_key.key.pem.private_key[0]) {
-      if (setup_data->is_rpk_not_cert) {
-        coap_log_warn("RPK keys cannot be in COAP_PKI_KEY_PEM format\n");
-        return GNUTLS_E_INSUFFICIENT_CREDENTIALS;
-      } else {
-        G_CHECK(gnutls_certificate_set_x509_key_file(*pki_credentials,
-                                                     setup_data->pki_key.key.pem.public_cert,
-                                                     setup_data->pki_key.key.pem.private_key,
-                                                     GNUTLS_X509_FMT_PEM),
-                "gnutls_certificate_set_x509_key_file");
-      }
-    } else if (role == COAP_DTLS_ROLE_SERVER) {
-      coap_log_err("***setup_pki: (D)TLS: No %s Certificate + Private "
-                   "Key defined\n",
-                   role == COAP_DTLS_ROLE_SERVER ? "Server" : "Client");
-      return GNUTLS_E_INSUFFICIENT_CREDENTIALS;
-    }
-    if (setup_data->pki_key.key.pem.ca_file &&
-        setup_data->pki_key.key.pem.ca_file[0]) {
-      ret = gnutls_certificate_set_x509_trust_file(*pki_credentials,
-                                                   setup_data->pki_key.key.pem.ca_file,
-                                                   GNUTLS_X509_FMT_PEM);
-      if (ret == 0) {
-        coap_log_warn("gnutls_certificate_set_x509_trust_file: No certificates found\n");
-      } else if (ret < 0) {
-        coap_log_warn("%s: '%s'\n",
-                      "gnutls_certificate_set_x509_trust_file",
-                      gnutls_strerror(ret));
-        goto fail;
-      }
-    }
-    break;
-
-  case COAP_PKI_KEY_PEM_BUF:
-    if (setup_data->pki_key.key.pem_buf.public_cert &&
-        setup_data->pki_key.key.pem_buf.public_cert_len &&
-        setup_data->pki_key.key.pem_buf.private_key &&
-        setup_data->pki_key.key.pem_buf.private_key_len) {
-      gnutls_datum_t cert;
-      gnutls_datum_t key;
-      int alloced_cert_memory = 0;
-      int alloced_key_memory = 0;
-
-      cert.size = setup_data->pki_key.key.pem_buf.public_cert_len;
-      if (setup_data->pki_key.key.pem_buf.public_cert[cert.size-1] != '\000') {
-        /* Need to allocate memory, rather than just copying pointers across */
-        alloced_cert_memory = 1;
-        cert.data = gnutls_malloc(cert.size + 1);
-        if (!cert.data) {
-          coap_log_err("gnutls_malloc failure\n");
-          return GNUTLS_E_MEMORY_ERROR;
-        }
-        memcpy(cert.data, setup_data->pki_key.key.pem_buf.public_cert,
-               cert.size);
-        cert.data[cert.size] = '\000';
-        cert.size++;
-      } else {
-        /* To get around const issue */
-        memcpy(&cert.data,
-               &setup_data->pki_key.key.pem_buf.public_cert, sizeof(cert.data));
-      }
-      key.size = setup_data->pki_key.key.pem_buf.private_key_len;
-      if (setup_data->pki_key.key.pem_buf.private_key[key.size-1] != '\000') {
-        /* Need to allocate memory, rather than just copying pointers across */
-        alloced_key_memory = 1;
-        key.data = gnutls_malloc(key.size + 1);
-        if (!key.data) {
-          coap_log_err("gnutls_malloc failure\n");
-          if (alloced_cert_memory)
-            gnutls_free(cert.data);
-          return GNUTLS_E_MEMORY_ERROR;
-        }
-        memcpy(key.data, setup_data->pki_key.key.pem_buf.private_key, key.size);
-        key.data[key.size] = '\000';
-        key.size++;
-      } else {
-        /* To get around const issue */
-        memcpy(&key.data,
-               &setup_data->pki_key.key.pem_buf.private_key, sizeof(key.data));
-      }
-      if (setup_data->is_rpk_not_cert) {
+  /*
+   * Configure the Private Key
+   */
+  if (key.key.define.private_key.u_byte &&
+      key.key.define.private_key.u_byte[0]) {
+    switch (key.key.define.private_key_def) {
+    case COAP_PKI_KEY_DEF_PEM: /* define private key */
+    case COAP_PKI_KEY_DEF_PEM_BUF: /* define private key */
+    case COAP_PKI_KEY_DEF_DER: /* define private key */
+    case COAP_PKI_KEY_DEF_DER_BUF: /* define private key */
+    case COAP_PKI_KEY_DEF_PKCS11: /* define private key */
+    case COAP_PKI_KEY_DEF_PKCS11_RPK: /* define private key */
+      /* Handled under public key */
+      break;
+    case COAP_PKI_KEY_DEF_RPK_BUF: /* define private key */
 #if (GNUTLS_VERSION_NUMBER >= 0x030606)
-        int have_done_key = 0;
-        if (strstr((char *)key.data, "-----BEGIN EC PRIVATE KEY-----")) {
-          gnutls_datum_t der_private;
-
-          if (gnutls_pem_base64_decode2("EC PRIVATE KEY", &key,
-                                        &der_private) == 0) {
-            gnutls_datum_t *spki = get_asn1_spki(der_private.data,
-                                                 der_private.size);
-
-            if (spki) {
-              ret = gnutls_certificate_set_rawpk_key_mem(*pki_credentials,
-                                                         spki,
-                                                         &der_private,
-                                                         GNUTLS_X509_FMT_DER, NULL,
-                                                         COAP_GNUTLS_KEY_RPK,
-                                                         NULL, 0, 0);
-              if (ret >= 0) {
-                have_done_key = 1;
-              }
-              gnutls_free(spki);
-            }
-            gnutls_free(der_private.data);
-          }
-        }
-        if (!have_done_key) {
-          G_CHECK(gnutls_certificate_set_rawpk_key_mem(*pki_credentials,
-                                                       &cert,
-                                                       &key,
-                                                       GNUTLS_X509_FMT_PEM, NULL,
-                                                       COAP_GNUTLS_KEY_RPK,
-                                                       NULL, 0, 0),
-                  "gnutls_certificate_set_rawpk_key_mem");
-        }
+      /* Handled under public key */
+      break;
 #else /* GNUTLS_VERSION_NUMBER < 0x030606 */
-        coap_log_err("RPK Support not available (needs gnutls 3.6.6 or later)\n");
+      coap_log_err("RPK Support not available (needs gnutls 3.6.6 or later)\n");
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, GNUTLS_E_INSUFFICIENT_CREDENTIALS);
+#endif /* GNUTLS_VERSION_NUMBER < 0x030606 */
+    case COAP_PKI_KEY_DEF_ENGINE: /* define private key */
+    default:
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, GNUTLS_E_INSUFFICIENT_CREDENTIALS);
+    }
+  } else if (role == COAP_DTLS_ROLE_SERVER ||
+             (key.key.define.public_cert.u_byte &&
+              key.key.define.public_cert.u_byte[0])) {
+    return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                  COAP_DEFINE_FAIL_NONE,
+                                  &key, role, GNUTLS_E_INSUFFICIENT_CREDENTIALS);
+  }
+
+  /*
+   * Configure the Public Certificate / Key
+   */
+  if (key.key.define.public_cert.u_byte &&
+      key.key.define.public_cert.u_byte[0]) {
+    /* Both Public and Private keys are handled here and MUST be the same type */
+    if (!(key.key.define.private_key.s_byte &&
+          key.key.define.private_key.s_byte[0] &&
+          key.key.define.private_key_def == key.key.define.public_cert_def)) {
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                    COAP_DEFINE_FAIL_NONE,
+                                    &key, role, GNUTLS_E_INSUFFICIENT_CREDENTIALS);
+    }
+    switch (key.key.define.public_cert_def) {
+    case COAP_PKI_KEY_DEF_PEM: /* define public cert */
+      if ((ret = gnutls_certificate_set_x509_key_file(*pki_credentials,
+                                                      key.key.define.public_cert.s_byte,
+                                                      key.key.define.private_key.s_byte,
+                                                      GNUTLS_X509_FMT_PEM) < 0)) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      break;
+    case COAP_PKI_KEY_DEF_PEM_BUF: /* define public cert */
+      if ((ret = check_null_memory(&cert,
+                                   key.key.define.public_cert.u_byte,
+                                   key.key.define.public_cert_len,
+                                   &alloced_cert_memory)) < 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      if ((ret = check_null_memory(&pkey,
+                                   key.key.define.private_key.u_byte,
+                                   key.key.define.private_key_len,
+                                   &alloced_pkey_memory)) < 0) {
         if (alloced_cert_memory)
           gnutls_free(cert.data);
-        if (alloced_key_memory)
-          gnutls_free(key.data);
-        return GNUTLS_E_INSUFFICIENT_CREDENTIALS;
-#endif /* GNUTLS_VERSION_NUMBER < 0x030606 */
-      } else {
-        G_CHECK(gnutls_certificate_set_x509_key_mem(*pki_credentials,
-                                                    &cert,
-                                                    &key,
-                                                    GNUTLS_X509_FMT_PEM),
-                "gnutls_certificate_set_x509_key_mem");
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      if ((ret = gnutls_certificate_set_x509_key_mem(*pki_credentials,
+                                                     &cert,
+                                                     &pkey,
+                                                     GNUTLS_X509_FMT_PEM)) < 0) {
+        if (alloced_cert_memory)
+          gnutls_free(cert.data);
+        if (alloced_pkey_memory)
+          gnutls_free(pkey.data);
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
       }
       if (alloced_cert_memory)
         gnutls_free(cert.data);
-      if (alloced_key_memory)
-        gnutls_free(key.data);
-    } else if (role == COAP_DTLS_ROLE_SERVER) {
-      coap_log_err("***setup_pki: (D)TLS: No Server Certificate + Private "
-                   "Key defined\n");
-      return GNUTLS_E_INSUFFICIENT_CREDENTIALS;
-    }
-    if (setup_data->pki_key.key.pem_buf.ca_cert &&
-        setup_data->pki_key.key.pem_buf.ca_cert_len) {
-      gnutls_datum_t ca;
-      int alloced_ca_memory = 0;
-
-      ca.size = setup_data->pki_key.key.pem_buf.ca_cert_len;
-      if (setup_data->pki_key.key.pem_buf.ca_cert[ca.size-1] != '\000') {
-        /* Need to allocate memory, rather than just copying pointers across */
-        alloced_ca_memory = 1;
-        ca.data = gnutls_malloc(ca.size + 1);
-        if (!ca.data) {
-          coap_log_err("gnutls_malloc failure\n");
-          return GNUTLS_E_MEMORY_ERROR;
-        }
-        memcpy(ca.data, setup_data->pki_key.key.pem_buf.ca_cert, ca.size);
-        ca.data[ca.size] = '\000';
-        ca.size++;
-      } else {
-        /* To get around const issue */
-        memcpy(&ca.data,
-               &setup_data->pki_key.key.pem_buf.ca_cert, sizeof(ca.data));
-      }
-      ret = gnutls_certificate_set_x509_trust_mem(*pki_credentials,
-                                                  &ca,
-                                                  GNUTLS_X509_FMT_PEM);
-      if (ret == 0) {
-        coap_log_warn("gnutls_certificate_set_x509_trust_mem: No certificates found\n");
-      } else if (ret < 0) {
-        coap_log_warn("%s: '%s'\n",
-                      "gnutls_certificate_set_x509_trust_mem",
-                      gnutls_strerror(ret));
-        if (alloced_ca_memory)
-          gnutls_free(ca.data);
-        goto fail;
-      }
-      if (alloced_ca_memory)
-        gnutls_free(ca.data);
-    }
-    break;
-
-  case COAP_PKI_KEY_ASN1:
-    if (setup_data->pki_key.key.asn1.public_cert &&
-        setup_data->pki_key.key.asn1.public_cert_len &&
-        setup_data->pki_key.key.asn1.private_key &&
-        setup_data->pki_key.key.asn1.private_key_len > 0) {
-      gnutls_datum_t cert;
-      gnutls_datum_t key;
-
-      /* Kludge to get around const parameters */
-      memcpy(&cert.data, &setup_data->pki_key.key.asn1.public_cert,
-             sizeof(cert.data));
-      cert.size = setup_data->pki_key.key.asn1.public_cert_len;
-      memcpy(&key.data, &setup_data->pki_key.key.asn1.private_key,
-             sizeof(key.data));
-      key.size = setup_data->pki_key.key.asn1.private_key_len;
-      if (setup_data->is_rpk_not_cert) {
+      if (alloced_pkey_memory)
+        gnutls_free(pkey.data);
+      break;
+    case COAP_PKI_KEY_DEF_RPK_BUF: /* define public cert */
 #if (GNUTLS_VERSION_NUMBER >= 0x030606)
-        int have_done_key = 0;
-        if (setup_data->pki_key.key.asn1.private_key_type ==
-            COAP_ASN1_PKEY_EC) {
-          gnutls_datum_t *spki = get_asn1_spki(key.data,
-                                               key.size);
+      if ((ret = check_null_memory(&cert,
+                                   key.key.define.public_cert.u_byte,
+                                   key.key.define.public_cert_len,
+                                   &alloced_cert_memory)) < 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      if ((ret = check_null_memory(&pkey,
+                                   key.key.define.private_key.u_byte,
+                                   key.key.define.private_key_len,
+                                   &alloced_pkey_memory)) < 0) {
+        if (alloced_cert_memory)
+          gnutls_free(cert.data);
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      if (strstr((char *)pkey.data, "-----BEGIN EC PRIVATE KEY-----")) {
+        gnutls_datum_t der_private;
+
+        if (gnutls_pem_base64_decode2("EC PRIVATE KEY", &pkey,
+                                      &der_private) == 0) {
+          coap_binary_t *spki = get_asn1_spki(der_private.data,
+                                              der_private.size);
 
           if (spki) {
+            gnutls_datum_t tspki;
+
+            tspki.data = spki->s;
+            tspki.size = spki->length;
             ret = gnutls_certificate_set_rawpk_key_mem(*pki_credentials,
-                                                       spki,
-                                                       &key,
+                                                       &tspki,
+                                                       &der_private,
                                                        GNUTLS_X509_FMT_DER, NULL,
                                                        COAP_GNUTLS_KEY_RPK,
                                                        NULL, 0, 0);
             if (ret >= 0) {
               have_done_key = 1;
             }
-            gnutls_free(spki);
+            coap_delete_binary(spki);
           }
+          gnutls_free(der_private.data);
         }
-        if (!have_done_key) {
-          G_CHECK(gnutls_certificate_set_rawpk_key_mem(*pki_credentials,
-                                                       &cert,
-                                                       &key,
-                                                       GNUTLS_X509_FMT_DER, NULL,
-                                                       COAP_GNUTLS_KEY_RPK,
-                                                       NULL, 0, 0),
-                  "gnutls_certificate_set_rawpk_key_mem");
+      }
+      if (!have_done_key) {
+        if ((ret = gnutls_certificate_set_rawpk_key_mem(*pki_credentials,
+                                                        &cert,
+                                                        &pkey,
+                                                        GNUTLS_X509_FMT_PEM, NULL,
+                                                        COAP_GNUTLS_KEY_RPK,
+                                                        NULL, 0, 0)) < 0) {
+          if (alloced_cert_memory)
+            gnutls_free(cert.data);
+          if (alloced_pkey_memory)
+            gnutls_free(pkey.data);
+          return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                        COAP_DEFINE_FAIL_BAD,
+                                        &key, role, GNUTLS_E_INSUFFICIENT_CREDENTIALS);
         }
+      }
+      if (alloced_cert_memory)
+        gnutls_free(cert.data);
+      if (alloced_pkey_memory)
+        gnutls_free(pkey.data);
+      break;
 #else /* GNUTLS_VERSION_NUMBER < 0x030606 */
-        coap_log_err("RPK Support not available (needs gnutls 3.6.6 or later)\n");
-        return GNUTLS_E_INSUFFICIENT_CREDENTIALS;
+      coap_log_err("RPK Support not available (needs gnutls 3.6.6 or later)\n");
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, GNUTLS_E_INSUFFICIENT_CREDENTIALS);
 #endif /* GNUTLS_VERSION_NUMBER < 0x030606 */
-      } else {
-        G_CHECK(gnutls_certificate_set_x509_key_mem(*pki_credentials,
-                                                    &cert,
-                                                    &key,
-                                                    GNUTLS_X509_FMT_DER),
-                "gnutls_certificate_set_x509_key_mem");
+    case COAP_PKI_KEY_DEF_DER: /* define public cert */
+      if ((ret = gnutls_certificate_set_x509_key_file(*pki_credentials,
+                                                      key.key.define.public_cert.s_byte,
+                                                      key.key.define.private_key.s_byte,
+                                                      GNUTLS_X509_FMT_DER) < 0)) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
       }
-    } else if (role == COAP_DTLS_ROLE_SERVER) {
-      coap_log_err("***setup_pki: (D)TLS: No %s Certificate + Private "
-                   "Key defined\n",
-                   role == COAP_DTLS_ROLE_SERVER ? "Server" : "Client");
-      return GNUTLS_E_INSUFFICIENT_CREDENTIALS;
-    }
-    if (setup_data->pki_key.key.asn1.ca_cert &&
-        setup_data->pki_key.key.asn1.ca_cert_len > 0) {
-      gnutls_datum_t ca_cert;
-
-      /* Kludge to get around const parameters */
-      memcpy(&ca_cert.data, &setup_data->pki_key.key.asn1.ca_cert,
-             sizeof(ca_cert.data));
-      ca_cert.size = setup_data->pki_key.key.asn1.ca_cert_len;
-      ret = gnutls_certificate_set_x509_trust_mem(*pki_credentials,
-                                                  &ca_cert,
-                                                  GNUTLS_X509_FMT_DER);
-      if (ret == 0) {
-        coap_log_warn("gnutls_certificate_set_x509_trust_mem: No certificates found\n");
-      } else if (ret < 0) {
-        coap_log_warn("%s: '%s'\n",
-                      "gnutls_certificate_set_x509_trust_mem",
-                      gnutls_strerror(ret));
-        goto fail;
+      break;
+    case COAP_PKI_KEY_DEF_DER_BUF: /* define public cert */
+      if ((ret = check_null_memory(&cert,
+                                   key.key.define.public_cert.u_byte,
+                                   key.key.define.public_cert_len,
+                                   &alloced_cert_memory)) < 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
       }
-    }
-    break;
-
-  case COAP_PKI_KEY_PKCS11:
-    if (setup_data->pki_key.key.pkcs11.public_cert &&
-        setup_data->pki_key.key.pkcs11.public_cert[0] &&
-        setup_data->pki_key.key.pkcs11.private_key &&
-        setup_data->pki_key.key.pkcs11.private_key[0]) {
-
-      gnutls_pkcs11_set_pin_function(pin_callback, setup_data);
-      if (setup_data->is_rpk_not_cert) {
+      if ((ret = check_null_memory(&pkey,
+                                   key.key.define.private_key.u_byte,
+                                   key.key.define.private_key_len,
+                                   &alloced_pkey_memory)) < 0) {
+        if (alloced_cert_memory)
+          gnutls_free(cert.data);
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      if ((ret = gnutls_certificate_set_x509_key_mem(*pki_credentials,
+                                                     &cert,
+                                                     &pkey,
+                                                     GNUTLS_X509_FMT_DER)) < 0) {
+        if (alloced_cert_memory)
+          gnutls_free(cert.data);
+        if (alloced_pkey_memory)
+          gnutls_free(pkey.data);
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PRIVATE,
+                                      COAP_DEFINE_FAIL_NONE,
+                                      &key, role, ret);
+      }
+      if (alloced_cert_memory)
+        gnutls_free(cert.data);
+      if (alloced_pkey_memory)
+        gnutls_free(pkey.data);
+      break;
+    case COAP_PKI_KEY_DEF_PKCS11: /* define public cert */
+      gnutls_pkcs11_set_pin_function(pin_callback, &setup_data->pki_key);
+      if ((ret = gnutls_certificate_set_x509_key_file(*pki_credentials,
+                                                      key.key.define.public_cert.s_byte,
+                                                      key.key.define.private_key.s_byte,
+                                                      GNUTLS_X509_FMT_DER)) < 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      break;
+    case COAP_PKI_KEY_DEF_PKCS11_RPK: /* define public cert */
 #if (GNUTLS_VERSION_NUMBER >= 0x030606)
-        G_CHECK(gnutls_certificate_set_rawpk_key_file(*pki_credentials,
-                                                      setup_data->pki_key.key.pkcs11.public_cert,
-                                                      setup_data->pki_key.key.pkcs11.private_key,
-                                                      GNUTLS_X509_FMT_PEM, NULL,
-                                                      COAP_GNUTLS_KEY_RPK,
-                                                      NULL, 0, GNUTLS_PKCS_PLAIN, 0),
-                "gnutls_certificate_set_rawpk_key_file");
+      gnutls_pkcs11_set_pin_function(pin_callback, setup_data);
+      if ((ret = gnutls_certificate_set_rawpk_key_file(*pki_credentials,
+                                                       key.key.define.public_cert.s_byte,
+                                                       key.key.define.private_key.s_byte,
+                                                       GNUTLS_X509_FMT_PEM, NULL,
+                                                       COAP_GNUTLS_KEY_RPK,
+                                                       NULL, 0, GNUTLS_PKCS_PLAIN, 0))) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
 #else /* GNUTLS_VERSION_NUMBER < 0x030606 */
-        coap_log_err("RPK Support not available (needs gnutls 3.6.6 or later)\n");
-        return GNUTLS_E_INSUFFICIENT_CREDENTIALS;
-#endif /* GNUTLS_VERSION_NUMBER < 0x030606 */
-      } else {
-        G_CHECK(gnutls_certificate_set_x509_key_file(*pki_credentials,
-                                                     setup_data->pki_key.key.pkcs11.public_cert,
-                                                     setup_data->pki_key.key.pkcs11.private_key,
-                                                     GNUTLS_X509_FMT_DER),
-                "gnutls_certificate_set_x509_key_file");
-      }
-    } else if (role == COAP_DTLS_ROLE_SERVER) {
-      coap_log_err("***setup_pki: (D)TLS: No %s Certificate + Private "
-                   "Key defined\n",
-                   role == COAP_DTLS_ROLE_SERVER ? "Server" : "Client");
+      coap_log_err("RPK Support not available (needs gnutls 3.6.6 or later)\n");
       return GNUTLS_E_INSUFFICIENT_CREDENTIALS;
+#endif /* GNUTLS_VERSION_NUMBER < 0x030606 */
+      break;
+    case COAP_PKI_KEY_DEF_ENGINE: /* define public cert */
+    default:
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_PUBLIC,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, GNUTLS_E_INSUFFICIENT_CREDENTIALS);
     }
-    if (setup_data->pki_key.key.pkcs11.ca &&
-        setup_data->pki_key.key.pkcs11.ca[0]) {
-      ret = gnutls_certificate_set_x509_trust_file(*pki_credentials,
-                                                   setup_data->pki_key.key.pkcs11.ca,
-                                                   GNUTLS_X509_FMT_DER);
-      if (ret == 0) {
-        coap_log_warn("gnutls_certificate_set_x509_trust_file: No certificates found\n");
-      } else if (ret < 0) {
-        coap_log_warn("%s: '%s'\n",
-                      "gnutls_certificate_set_x509_trust_file",
-                      gnutls_strerror(ret));
-        goto fail;
-      }
-    }
-    break;
+  }
 
-  default:
-    coap_log_err("***setup_pki: (D)TLS: Unknown key type %d\n",
-                 setup_data->pki_key.key_type);
-    return GNUTLS_E_INSUFFICIENT_CREDENTIALS;
+  /*
+   * Configure the CA
+   */
+  if (setup_data->check_common_ca && key.key.define.ca.u_byte &&
+      key.key.define.ca.u_byte[0]) {
+    switch (key.key.define.ca_def) {
+    case COAP_PKI_KEY_DEF_PEM:
+      if ((ret = gnutls_certificate_set_x509_trust_file(*pki_credentials,
+                                                        key.key.define.ca.s_byte,
+                                                        GNUTLS_X509_FMT_PEM) < 0)) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      break;
+    case COAP_PKI_KEY_DEF_PEM_BUF: /* define ca */
+      if ((ret = check_null_memory(&ca,
+                                   key.key.define.ca.u_byte,
+                                   key.key.define.ca_len,
+                                   &alloced_ca_memory)) < 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      if ((ret = gnutls_certificate_set_x509_trust_mem(*pki_credentials,
+                                                       &ca,
+                                                       GNUTLS_X509_FMT_PEM)) < 0) {
+        if (alloced_ca_memory)
+          gnutls_free(ca.data);
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      if (alloced_ca_memory)
+        gnutls_free(ca.data);
+      break;
+    case COAP_PKI_KEY_DEF_RPK_BUF: /* define ca */
+      /* Ignore if set */
+      break;
+    case COAP_PKI_KEY_DEF_DER: /* define ca */
+      if ((ret = gnutls_certificate_set_x509_trust_file(*pki_credentials,
+                                                        key.key.define.ca.s_byte,
+                                                        GNUTLS_X509_FMT_DER) < 0)) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      break;
+    case COAP_PKI_KEY_DEF_DER_BUF: /* define ca */
+      if ((ret = check_null_memory(&ca,
+                                   key.key.define.ca.u_byte,
+                                   key.key.define.ca_len,
+                                   &alloced_ca_memory)) < 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      if ((ret = gnutls_certificate_set_x509_trust_mem(*pki_credentials,
+                                                       &ca,
+                                                       GNUTLS_X509_FMT_DER)) <= 0) {
+        if (alloced_ca_memory)
+          gnutls_free(ca.data);
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      if (alloced_ca_memory)
+        gnutls_free(ca.data);
+      break;
+    case COAP_PKI_KEY_DEF_PKCS11: /* define ca */
+      if ((ret = gnutls_certificate_set_x509_trust_file(*pki_credentials,
+                                                        key.key.define.ca.s_byte,
+                                                        GNUTLS_X509_FMT_DER)) <= 0) {
+        return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                      COAP_DEFINE_FAIL_BAD,
+                                      &key, role, ret);
+      }
+      break;
+    case COAP_PKI_KEY_DEF_PKCS11_RPK: /* define ca */
+      /* Ignore if set */
+      break;
+    case COAP_PKI_KEY_DEF_ENGINE: /* define ca */
+    default:
+      return coap_dtls_define_issue(COAP_DEFINE_KEY_CA,
+                                    COAP_DEFINE_FAIL_NOT_SUPPORTED,
+                                    &key, role, GNUTLS_E_INSUFFICIENT_CREDENTIALS);
+    }
   }
 
   if (g_context->root_ca_file) {
@@ -1511,10 +1562,12 @@ post_client_hello_gnutls_psk(gnutls_session_t g_session) {
       /*
        * New SNI request
        */
-      const coap_dtls_spsk_info_t *new_entry =
-          c_session->context->spsk_setup_data.validate_sni_call_back(name,
-              c_session,
-              c_session->context->spsk_setup_data.sni_call_back_arg);
+      const coap_dtls_spsk_info_t *new_entry;
+
+      coap_lock_callback_ret(new_entry, c_session->context,
+                             c_session->context->spsk_setup_data.validate_sni_call_back(name,
+                                 c_session,
+                                 c_session->context->spsk_setup_data.sni_call_back_arg));
       if (!new_entry) {
         G_ACTION(gnutls_alert_send(g_session, GNUTLS_AL_FATAL,
                                    GNUTLS_A_UNRECOGNIZED_NAME));
@@ -1625,9 +1678,11 @@ post_client_hello_gnutls_pki(gnutls_session_t g_session) {
       /*
        * New SNI request
        */
-      coap_dtls_key_t *new_entry =
-          g_context->setup_data.validate_sni_call_back(name,
-                                                       g_context->setup_data.sni_call_back_arg);
+      coap_dtls_key_t *new_entry;
+
+      coap_lock_callback_ret(new_entry, c_session->context,
+                             g_context->setup_data.validate_sni_call_back(name,
+                                 g_context->setup_data.sni_call_back_arg));
       if (!new_entry) {
         G_ACTION(gnutls_alert_send(g_session, GNUTLS_AL_FATAL,
                                    GNUTLS_A_UNRECOGNIZED_NAME));
@@ -1643,11 +1698,10 @@ post_client_hello_gnutls_pki(gnutls_session_t g_session) {
       g_context->pki_sni_entry_list[i].pki_key = *new_entry;
       sni_setup_data = g_context->setup_data;
       sni_setup_data.pki_key = *new_entry;
-      if ((ret = setup_pki_credentials(
-                     &g_context->pki_sni_entry_list[i].pki_credentials,
-                     g_session,
-                     g_context,
-                     &sni_setup_data, COAP_DTLS_ROLE_SERVER)) < 0) {
+      if ((ret = setup_pki_credentials(&g_context->pki_sni_entry_list[i].pki_credentials,
+                                       g_session,
+                                       g_context,
+                                       &sni_setup_data, COAP_DTLS_ROLE_SERVER)) < 0) {
         int keep_ret = ret;
         G_ACTION(gnutls_alert_send(g_session, GNUTLS_AL_FATAL,
                                    GNUTLS_A_BAD_CERTIFICATE));
@@ -1942,9 +1996,16 @@ coap_dgram_write(gnutls_transport_ptr_t context, const void *send_buffer,
     result = c_session->sock.lfunc[COAP_LAYER_TLS].l_write(c_session,
                                                            send_buffer, send_buffer_length);
     if (result != (int)send_buffer_length) {
+      int keep_errno = errno;
+
       coap_log_warn("coap_netif_dgrm_write failed (%zd != %zu)\n",
                     result, send_buffer_length);
-      result = 0;
+      errno = keep_errno;
+      if (result < 0) {
+        return -1;
+      } else {
+        result = 0;
+      }
     }
   } else {
     result = 0;
@@ -2254,7 +2315,7 @@ coap_dtls_free_session(coap_session_t *c_session) {
                               COAP_PROTO_NOT_RELIABLE(c_session->proto) ?
                               COAP_FREE_BYE_AS_UDP : COAP_FREE_BYE_AS_TCP);
     c_session->tls = NULL;
-    coap_handle_event(c_session->context, COAP_EVENT_DTLS_CLOSED, c_session);
+    coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CLOSED, c_session);
   }
 }
 
@@ -2285,6 +2346,8 @@ coap_dtls_send(coap_session_t *c_session,
   assert(g_env != NULL);
 
   c_session->dtls_event = -1;
+  coap_log_debug("*  %s: dtls:  sent %4d bytes\n",
+                 coap_session_str(c_session), (int)data_len);
   if (g_env->established) {
     ret = gnutls_record_send(g_env->g_session, data, data_len);
 
@@ -2321,22 +2384,14 @@ coap_dtls_send(coap_session_t *c_session,
   }
 
   if (c_session->dtls_event >= 0) {
-    coap_handle_event(c_session->context, c_session->dtls_event, c_session);
+    coap_handle_event_lkd(c_session->context, c_session->dtls_event, c_session);
     if (c_session->dtls_event == COAP_EVENT_DTLS_ERROR ||
         c_session->dtls_event == COAP_EVENT_DTLS_CLOSED) {
-      coap_session_disconnected(c_session, COAP_NACK_TLS_FAILED);
+      coap_session_disconnected_lkd(c_session, COAP_NACK_TLS_FAILED);
       ret = -1;
     }
   }
 
-  if (ret > 0) {
-    if (ret == (ssize_t)data_len)
-      coap_log_debug("*  %s: dtls:  sent %4d bytes\n",
-                     coap_session_str(c_session), ret);
-    else
-      coap_log_debug("*  %s: dtls:  sent %4d of %4zd bytes\n",
-                     coap_session_str(c_session), ret, data_len);
-  }
   return ret;
 }
 
@@ -2390,7 +2445,7 @@ coap_dtls_handle_timeout(coap_session_t *c_session) {
       (do_gnutls_handshake(c_session, g_env) < 0)) {
     /* Too many retries */
     g_env->doing_dtls_timeout = 0;
-    coap_session_disconnected(c_session, COAP_NACK_TLS_FAILED);
+    coap_session_disconnected_lkd(c_session, COAP_NACK_TLS_FAILED);
     return 1;
   } else {
     g_env->doing_dtls_timeout = 0;
@@ -2423,8 +2478,8 @@ coap_dtls_receive(coap_session_t *c_session, const uint8_t *data,
   c_session->dtls_event = -1;
   if (g_env->established) {
     if (c_session->state == COAP_SESSION_STATE_HANDSHAKE) {
-      coap_handle_event(c_session->context, COAP_EVENT_DTLS_CONNECTED,
-                        c_session);
+      coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CONNECTED,
+                            c_session);
       gnutls_transport_set_ptr(g_env->g_session, c_session);
       c_session->sock.lfunc[COAP_LAYER_TLS].l_establish(c_session);
     }
@@ -2471,12 +2526,12 @@ coap_dtls_receive(coap_session_t *c_session, const uint8_t *data,
   }
 
   if (c_session->dtls_event >= 0) {
-    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected() */
+    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected_lkd() */
     if (c_session->dtls_event != COAP_EVENT_DTLS_CLOSED)
-      coap_handle_event(c_session->context, c_session->dtls_event, c_session);
+      coap_handle_event_lkd(c_session->context, c_session->dtls_event, c_session);
     if (c_session->dtls_event == COAP_EVENT_DTLS_ERROR ||
         c_session->dtls_event == COAP_EVENT_DTLS_CLOSED) {
-      coap_session_disconnected(c_session, COAP_NACK_TLS_FAILED);
+      coap_session_disconnected_lkd(c_session, COAP_NACK_TLS_FAILED);
       ssl_data = NULL;
       ret = -1;
     }
@@ -2679,7 +2734,7 @@ coap_tls_new_client_session(coap_session_t *c_session) {
   c_session->tls = g_env;
   ret = do_gnutls_handshake(c_session, g_env);
   if (ret == 1) {
-    coap_handle_event(c_session->context, COAP_EVENT_DTLS_CONNECTED, c_session);
+    coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CONNECTED, c_session);
     c_session->sock.lfunc[COAP_LAYER_TLS].l_establish(c_session);
   }
   return g_env;
@@ -2725,7 +2780,7 @@ coap_tls_new_server_session(coap_session_t *c_session) {
   c_session->tls = g_env;
   ret = do_gnutls_handshake(c_session, g_env);
   if (ret == 1) {
-    coap_handle_event(c_session->context, COAP_EVENT_DTLS_CONNECTED, c_session);
+    coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CONNECTED, c_session);
     c_session->sock.lfunc[COAP_LAYER_TLS].l_establish(c_session);
   }
   return g_env;
@@ -2788,8 +2843,8 @@ coap_tls_write(coap_session_t *c_session, const uint8_t *data,
   } else {
     ret = do_gnutls_handshake(c_session, g_env);
     if (ret == 1) {
-      coap_handle_event(c_session->context, COAP_EVENT_DTLS_CONNECTED,
-                        c_session);
+      coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CONNECTED,
+                            c_session);
       c_session->sock.lfunc[COAP_LAYER_TLS].l_establish(c_session);
       ret = 0;
     } else {
@@ -2798,12 +2853,12 @@ coap_tls_write(coap_session_t *c_session, const uint8_t *data,
   }
 
   if (c_session->dtls_event >= 0) {
-    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected() */
+    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected_lkd() */
     if (c_session->dtls_event != COAP_EVENT_DTLS_CLOSED)
-      coap_handle_event(c_session->context, c_session->dtls_event, c_session);
+      coap_handle_event_lkd(c_session->context, c_session->dtls_event, c_session);
     if (c_session->dtls_event == COAP_EVENT_DTLS_ERROR ||
         c_session->dtls_event == COAP_EVENT_DTLS_CLOSED) {
-      coap_session_disconnected(c_session, COAP_NACK_TLS_FAILED);
+      coap_session_disconnected_lkd(c_session, COAP_NACK_TLS_FAILED);
       ret = -1;
     }
   }
@@ -2838,8 +2893,8 @@ coap_tls_read(coap_session_t *c_session, uint8_t *data, size_t data_len) {
   if (!g_env->established && !g_env->sent_alert) {
     ret = do_gnutls_handshake(c_session, g_env);
     if (ret == 1) {
-      coap_handle_event(c_session->context, COAP_EVENT_DTLS_CONNECTED,
-                        c_session);
+      coap_handle_event_lkd(c_session->context, COAP_EVENT_DTLS_CONNECTED,
+                            c_session);
       c_session->sock.lfunc[COAP_LAYER_TLS].l_establish(c_session);
       ret = 0;
     }
@@ -2879,12 +2934,12 @@ coap_tls_read(coap_session_t *c_session, uint8_t *data, size_t data_len) {
   }
 
   if (c_session->dtls_event >= 0) {
-    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected() */
+    /* COAP_EVENT_DTLS_CLOSED event reported in coap_session_disconnected_lkd() */
     if (c_session->dtls_event != COAP_EVENT_DTLS_CLOSED)
-      coap_handle_event(c_session->context, c_session->dtls_event, c_session);
+      coap_handle_event_lkd(c_session->context, c_session->dtls_event, c_session);
     if (c_session->dtls_event == COAP_EVENT_DTLS_ERROR ||
         c_session->dtls_event == COAP_EVENT_DTLS_CLOSED) {
-      coap_session_disconnected(c_session, COAP_NACK_TLS_FAILED);
+      coap_session_disconnected_lkd(c_session, COAP_NACK_TLS_FAILED);
       ret = -1;
     }
   }

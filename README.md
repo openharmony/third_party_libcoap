@@ -7,7 +7,7 @@
 [![CIFuzz Status](https://github.com/obgm/libcoap/actions/workflows/cifuzz.yml/badge.svg?branch=develop)](https://github.com/obgm/libcoap/actions/workflows/cifuzz.yml)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 
-Copyright (C) 2010—2023 by Olaf Bergmann <bergmann@tzi.org> and others
+Copyright (C) 2010—2024 by Olaf Bergmann <bergmann@tzi.org> and others
 
 ABOUT LIBCOAP
 =============
@@ -73,6 +73,8 @@ There is (D)TLS support for the following libraries
 
 * [Mbed TLS](https://www.trustedfirmware.org/projects/mbed-tls/) (Minimum version 2.7.10) [PKI and PSK]
 
+* [wolfSSL](https://wolfssl.com) (Minimum version 5.2.0) [PKI, PSK, RPK(5.6.4+) and DTLS1.3(5.4.0+)]
+
 * [TinyDTLS](https://github.com/eclipse/tinydtls) [PSK and RPK] [DTLS Only]
 
 The examples directory contain a CoAP client, CoAP Resource Directory server
@@ -94,4 +96,3 @@ include open-source software with their respective licensing terms.
 Please refer to
 [LICENSE](https://raw.githubusercontent.com/obgm/libcoap/develop/LICENSE)
 for further details.
-

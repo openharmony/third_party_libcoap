@@ -1,7 +1,7 @@
 /*
  * coap_io.h -- Default network I/O functions for libcoap
  *
- * Copyright (C) 2012-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2012-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -29,20 +29,33 @@ struct uip_udp_conn;
 
 #ifdef RIOT_VERSION
 #include "net/gnrc.h"
+#include "net/sock/udp.h"
+#if ! COAP_DISABLE_TCP
+#include "net/sock/tcp.h"
+#endif /* ! COAP_DISABLE_TCP */
 #endif /* RIOT_VERSION */
 
 struct coap_socket_t {
 #if defined(WITH_LWIP)
-  struct udp_pcb *pcb;
+  struct pbuf *p;
+  struct udp_pcb *udp_pcb;
+#if ! COAP_DISABLE_TCP
+  struct tcp_pcb *tcp_pcb;
+#endif /* ! COAP_DISABLE_TCP */
+
 #elif defined(WITH_CONTIKI)
   struct uip_udp_conn *udp_conn;
   coap_context_t *context;
+
+#elif defined(RIOT_VERSION)
+  sock_udp_t udp;
+#if ! COAP_DISABLE_TCP
+  sock_tcp_t tcp;
+#endif /* ! COAP_DISABLE_TCP */
+  coap_fd_t fd;
 #else
   coap_fd_t fd;
-#endif /* WITH_LWIP */
-#if defined(RIOT_VERSION)
-  gnrc_pktsnip_t *pkt; /**< pointer to received packet for processing */
-#endif /* RIOT_VERSION */
+#endif /* ! WITH_LWIP && !WITH_CONTIKI && ! RIOT_VERSION */
   coap_socket_flags_t flags; /**< 1 or more of COAP_SOCKET* flag values */
   coap_session_t *session; /**< Used to determine session owner. */
 #if COAP_SERVER_SUPPORT
@@ -92,9 +105,11 @@ int coap_socket_connect_udp(coap_socket_t *sock,
                             coap_address_t *remote_addr);
 #endif /* COAP_CLIENT_SUPPORT */
 
+#if COAP_SERVER_SUPPORT
 int coap_socket_bind_udp(coap_socket_t *sock,
                          const coap_address_t *listen_addr,
                          coap_address_t *bound_addr);
+#endif /* COAP_SERVER_SUPPORT */
 
 /**
  * Function interface to close off a socket.
@@ -151,12 +166,13 @@ void coap_epoll_ctl_add(coap_socket_t *sock, uint32_t events, const char *func);
 void coap_epoll_ctl_mod(coap_socket_t *sock, uint32_t events, const char *func);
 
 /**
- * Update the epoll timer fd as to when it is to trigger.
+ * Update when to continue with I/O processing, unless packets come in in the
+ * meantime. Typically, this timeout triggers retransmissions.
  *
- * @param context The context to update the epoll timer on.
- * @param delay The time to delay before the epoll timer fires.
+ * @param context The CoAP context.
+ * @param delay The time to delay before continuing with I/O processing.
  */
-void coap_update_epoll_timer(coap_context_t *context, coap_tick_t delay);
+void coap_update_io_timer(coap_context_t *context, coap_tick_t delay);
 
 #ifdef WITH_LWIP
 ssize_t coap_socket_send_pdu(coap_socket_t *sock, coap_session_t *session,
@@ -175,7 +191,7 @@ ssize_t coap_socket_send_pdu(coap_socket_t *sock, coap_session_t *session,
  * @return              The number of bytes written on success, or a value
  *                      less than zero on error.
  */
-ssize_t coap_socket_send(coap_socket_t *sock, const coap_session_t *session,
+ssize_t coap_socket_send(coap_socket_t *sock, coap_session_t *session,
                          const uint8_t *data, size_t datalen);
 
 /**
@@ -206,6 +222,8 @@ void coap_packet_get_memmapped(coap_packet_t *packet,
 
 #ifdef WITH_LWIP
 void coap_io_process_timeout(void *arg);
+void coap_io_lwip_init(void);
+void coap_io_lwip_cleanup(void);
 #endif
 
 struct coap_packet_t {

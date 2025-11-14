@@ -1,7 +1,7 @@
 /*
  * coap_prng.h -- Pseudo Random Numbers
  *
- * Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -23,27 +23,6 @@
  * API for generating pseudo random numbers
  * @{
  */
-
-#if defined(WITH_LWIP) && defined(LWIP_RAND)
-
-COAP_STATIC_INLINE int
-lwip_prng_impl(unsigned char *buf, size_t len) {
-  u32_t v = LWIP_RAND();
-  while (len > sizeof(v)) {
-    memcpy(buf, &v, sizeof(v));
-    len -= sizeof(v);
-    buf += sizeof(v);
-    v = LWIP_RAND();
-  }
-
-  memcpy(buf, &v, len);
-  return 1;
-}
-
-#define coap_prng(Buf,Length) lwip_prng_impl((Buf), (Length))
-#define coap_prng_init(Value) (void)Value
-
-#else
 
 /**
  * Data type for random number generator function. The function must
@@ -67,7 +46,7 @@ void coap_set_prng(coap_rand_func_t rng);
  *
  * @param seed  The seed for the pseudo random number generator.
  */
-void coap_prng_init(unsigned int seed);
+COAP_API void coap_prng_init(unsigned int seed);
 
 /**
  * Fills @p buf with @p len random bytes using the default pseudo
@@ -80,9 +59,7 @@ void coap_prng_init(unsigned int seed);
  *
  * @return 1 on success, 0 otherwise.
  */
-int coap_prng(void *buf, size_t len);
-
-#endif /* POSIX */
+COAP_API int coap_prng(void *buf, size_t len);
 
 /** @} */
 

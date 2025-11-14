@@ -1,4 +1,17 @@
-/* coap_config.h.  Generated from coap_config.h.in by configure.  */
+/*
+ * coap_config.h.  Generated from coap_config.h.in by configure.
+ *
+ * Copyright (C) 2024--2025 Olaf Bergmann <bergmann@tzi.org> and others
+ *
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * This file is part of the CoAP library libcoap. Please see README for terms
+ * of use.
+ */
+
+#ifndef COAP_CONFIG_H
+#define COAP_CONFIG_H
+
 /* coap_config.h.in.  Generated from configure.ac by autoheader.  */
 
 /* Define if building universal (internal helper macro) */
@@ -57,6 +70,9 @@
 
 /* Define to 1 to build with WebSockets support. */
 /* #undef COAP_WS_SUPPORT */
+
+/* Define to 1 if the library has thread safe support */
+#define COAP_THREAD_SAFE ON
 
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #define HAVE_ARPA_INET_H 1
@@ -197,7 +213,7 @@
 #define PACKAGE_NAME "libcoap"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "libcoap 4.3.4"
+#define PACKAGE_STRING "libcoap 4.3.5"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "libcoap"
@@ -206,7 +222,7 @@
 #define PACKAGE_URL "https://libcoap.net/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "4.3.4"
+#define PACKAGE_VERSION "4.3.5"
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
@@ -231,3 +247,5 @@
 
 /* Define to `int' if <sys/types.h> does not define. */
 /* #undef ssize_t */
+
+#endif /* COAP_CONFIG_H */

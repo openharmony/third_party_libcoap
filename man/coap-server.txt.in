@@ -19,14 +19,16 @@ coap-server-notls
 
 SYNOPSIS
 --------
-*coap-server* [*-d* max] [*-e*] [*-g* group] [*-l* loss] [*-p* port] [*-r*]
-              [*-t*]  [*-v* num] [*-w* [port][,secure_port]]
+*coap-server* [*-a* priority] [*-b* max_block_size] [*-d* max] [*-e*]
+              [*-f* scheme://addr[:port]
+              [*-g* group] [*-l* loss] [*-p* port] [*-q* tls_engine_conf_file]
+              [*-r*] [*-t*]  [*-v* num] [*-w* [port][,secure_port]]
               [*-A* address] [*-E* oscore_conf_file[,seq_file]]
               [*-G* group_if] [*-L* value] [*-N*]
               [*-P* scheme://addr[:port],[name1[,name2..]]]
               [*-T* max_token_size] [*-U* type] [*-V* num] [*-X* size]
               [[*-h* hint] [*-i* match_identity_file] [*-k* key]
-              [*-s* match_psk_sni_file] [*-u* user]]
+              [*-s* match_psk_sni_file] [*-u* user] [*-2*]]
               [[*-c* certfile] [*-j* keyfile] [*-n*] [*-C* cafile]
               [*-J* pkcs11_pin] [*-M* rpk_file] [*-R* trust_casfile]
               [*-S* match_pki_sni_file]]
@@ -43,6 +45,13 @@ DESCRIPTION
 
 OPTIONS - General
 -----------------
+*-a* priority::
+   Send logging output to syslog at 'priority' (0-7) level.
+
+*-b* max_block_size::
+   Maximum block size server supports (16, 32, 64, 128, 256, 512 or 1024) in
+   bytes.
+
 *-d* max::
    Enable support for creation of dynamic resources when doing a PUT up to a
    limit of 'max'.  If 'max' is reached, a 4.06 code is returned until one of
@@ -50,6 +59,14 @@ OPTIONS - General
 
 *-e* ::
    Echo back the data sent with a PUT.
+
+*-f* scheme://address[:port]::
+   Act as a reverse proxy where scheme, address, optional
+   port define how to connect to the internal server.
+   Scheme is one of coap, coaps, coap+tcp, coaps+tcp,
+   coap+ws, and coaps+ws. http(s) is not currently supported.
+   This option can be repeated to provide multiple internal
+   servers that are round-robin load balanced.
 
 *-g* group::
    Join specified multicast 'group' on start up.
@@ -68,6 +85,11 @@ OPTIONS - General
    If (D)TLS is supported, then 'port' + 1 will also be listened on for
    (D)TLS connections.
    The default port is 5683 if not given any other value.
+
+*-q* tls_engine_conf_file::
+   'tls_engine_conf_file' contains TLS ENGINE configuration. Only OpenSSL
+   is currently supported.
+   See *coap-tls-engine-conf*(5) for definitions.
 
 *-r* ::
    Enable multicast per resource support.  If enabled, only '/', '/async'
@@ -105,9 +127,11 @@ OPTIONS - General
    Sum of one or more COAP_BLOCK_* flag values for different block handling
    methods. Default is 1 (COAP_BLOCK_USE_LIBCOAP).
 
-     COAP_BLOCK_USE_LIBCOAP  1
-     COAP_BLOCK_SINGLE_BODY  2
-     COAP_BLOCK_TRY_Q_BLOCK  4
+     COAP_BLOCK_USE_LIBCOAP         1
+     COAP_BLOCK_SINGLE_BODY         2
+     COAP_BLOCK_TRY_Q_BLOCK         4
+     COAP_BLOCK_STLESS_BLOCK2      64
+     COAP_BLOCK_NOT_RANDOM_BLOCK1 128
 
 *-N* ::
    Send NON-confirmable message for "observe" responses. If option *-N* is
@@ -123,7 +147,10 @@ OPTIONS - General
    then this server is considered to be the final endpoint. If
    scheme://address[:port] is not defined before the leading , (comma) of the
    first name, then the ongoing connection will be a direct connection.
-   Scheme is one of coap, coaps, coap+tcp and coaps+tcp.
+   Scheme is one of coap, coaps, coap+tcp, coaps+tcp, coap+ws, and coaps+ws.
+   http and https not currently supported.
+   This option can be repeated to provide multiple upstream
+   servers that are round-robin load balanced.
 
 *-T* max_token_size::
    Set the maximum token length (8-65804).
@@ -161,6 +188,8 @@ OPTIONS - PSK
 *-k* key::
    Pre-shared key to use for inbound connections. This cannot be empty if
    defined. +
+   If the key begins with 0x, then the hex text (two [0-9a-f] per byte) is
+   converted to binary data. +
    Note: if *-c cafile* is defined, you need to define *-k key* as well to
    have the server support both PSK and PKI.
 
@@ -177,6 +206,9 @@ OPTIONS - PSK
 
 *-u* user ::
    User identity for pre-shared key mode (only used if option *-P* is set).
+
+*-2* ::
+   Use EC-JPAKE negotiation (if supported).
 
 OPTIONS - PKI
 -------------
@@ -205,11 +237,11 @@ definitions have to be in DER, not PEM, format.  Otherwise all of
 *-C* cafile::
   PEM file or PKCS11 URI that contains a list of one or more CAs that are to
   be passed to the client for the client to determine what client certificate
-  to use.  Normally, this list of CAs would be the root CA and and any
+  to use.  Normally, this list of CAs would be the root CA and any
   intermediate CAs. Ideally the server certificate should be signed by the
   same CA so that mutual authentication can take place. The contents of
   *cafile* are added to the trusted store of root CAs.  Using the *-C* or *-R*
-  options will will trigger the validation of the client certificate unless
+  options will trigger the validation of the client certificate unless
   overridden by the *-n* option.
 
 *-J* pkcs11_pin::
@@ -226,8 +258,8 @@ definitions have to be in DER, not PEM, format.  Otherwise all of
   directory containing a set of CA PEM files. The *-C cafile* CA does not have
   to be in this list and is trusted for the validation. Using
   *-R trust_casfile* disables common CA mutual authentication which can only
-  be done by using *-C cafile*. Using the *-C* or *-R* options will will
-  trigger the validation of the server certificate unless overridden by the
+  be done by using *-C cafile*. Using the *-C* or *-R* options will
+  trigger the validation of the client certificate unless overridden by the
   *-n* option.
 
 *-S* match_pki_sni_file::
@@ -276,6 +308,21 @@ coap-server -A 2001:db8:81a8:0:6ef0:dead:feed:beef -g FF02::FD
 Set listening address to '2001:db8:81a8:0:6ef0:dead:feed:beef' and join the
 All CoAP Nodes multicast group 'FF02::FD'.
 
+* Example
+----
+coap-server -P, -A ::1
+----
+Let the server listen on localhost (port '5683') for UDP/TCP, as well as
+accept any CoAP proxy requests and directly respond to them.
+
+* Example
+----
+coap-server -P coap://upstream-proxy, -A ::1
+----
+Let the server listen on localhost (port '5683') for UDP/TCP, and then
+open an upstream coap session to 'upstream-proxy' for proxying onwards
+the CoAP client's request.
+
 FILES
 ------
 There are no configuration files.
@@ -296,9 +343,11 @@ SEE ALSO
 
 BUGS
 -----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

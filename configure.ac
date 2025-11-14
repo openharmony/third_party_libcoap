@@ -1,8 +1,8 @@
 # configure.ac for the libcoap package
 #
-# Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
+# Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org>
 # Copyright (C) 2015-2018 Carsten Schoenert <c.schoenert@t-online.de>
-# Copyright (C) 2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+# Copyright (C) 2018-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
@@ -15,11 +15,18 @@
 # defined later.
 m4_define([libcoap_major_version], [4])
 m4_define([libcoap_minor_version], [3])
-m4_define([libcoap_micro_version], [4])
+m4_define([libcoap_micro_version], [5])
 
 # define an appending release state if needed, for example for pre-releases
 # like 'alpha' or 'rc1', for a full release keep the value empty!
 m4_define([libcoap_release_state], [])
+
+# Define the previous full libcoap software release version here.
+# Used if libcoap_release_state is not empty for LIBCOAP_VERSION and LIBCOAP_PACKAGE_BASE.
+# Set to libcoap software version when libcoap_release_state is reset to empty.
+m4_define([libcoap_pre_major_version], [4])
+m4_define([libcoap_pre_minor_version], [3])
+m4_define([libcoap_pre_micro_version], [4])
 
 # concatenate the full libcoap version string
 m4_define([libcoap_version], [m4_format([%s.%s.%s%s], libcoap_major_version, libcoap_minor_version, libcoap_micro_version, libcoap_release_state)])
@@ -71,7 +78,7 @@ LT_INIT([shared static])
 #                                         'revision' (short 'r') = 0
 #                                         'age'      (short 'a') = 0
 #
-# Update the libtool versioning only after the release of a public release of libcoap.
+# Update the libtool versioning only just before the release of a public release of libcoap.
 # Go through the following checklist from top to bottom and check your needs, following
 # the reminded changes if you can say "Yes" for specific check.
 #
@@ -140,13 +147,13 @@ LT_INIT([shared static])
 #
 # CAUTION
 #
-# You will need to manually update VERSION and LIBCOAP_ABI_VERSION in CMakeLists.txt
-# if changes are made to libcoap_xx_version and LT_LIBCOAP_xx respectively.
+# You will need to manually update various configuration files by running the
+# ./configure built script file scripts/fix_version.sh .
 #
 
-LT_LIBCOAP_CURRENT=4
-LT_LIBCOAP_REVISION=1
-LT_LIBCOAP_AGE=1
+LT_LIBCOAP_CURRENT=5
+LT_LIBCOAP_REVISION=0
+LT_LIBCOAP_AGE=2
 LIBCOAP_SO_VERSION=$LT_LIBCOAP_CURRENT.$LT_LIBCOAP_REVISION.$LT_LIBCOAP_AGE
 
 # Announce the libtool version
@@ -169,14 +176,45 @@ LIBCOAP_ABI_VERSION=$LT_TEMP.$LT_LIBCOAP_AGE.$LT_LIBCOAP_REVISION
 AC_SUBST(LIBCOAP_ABI_VERSION)
 AC_SUBST(LIBCOAP_API_VERSION)
 
-# Define a numeric version string
-m4_define([version_number],
-          [m4_format([%u%03u%03u],
-                     libcoap_major_version,
-                     libcoap_minor_version,
-                     libcoap_micro_version)])
-LIBCOAP_VERSION=version_number
-AC_SUBST(LIBCOAP_VERSION)
+LT_TEMP=libcoap_release_state
+if test "x$LT_TEMP" = "x"; then
+    # Define a numeric version string
+    m4_define([version_number],
+              [m4_format([%u%03u%03u],
+                         libcoap_major_version,
+                         libcoap_minor_version,
+                         libcoap_micro_version)])
+    LIBCOAP_VERSION=version_number
+    AC_SUBST(LIBCOAP_VERSION)
+
+    # Define a base version string
+    m4_define([base_version],
+              [m4_format([%u.%u.%u],
+                         libcoap_major_version,
+                         libcoap_minor_version,
+                         libcoap_micro_version)])
+    LIBCOAP_PACKAGE_BASE=base_version
+    AC_SUBST(LIBCOAP_PACKAGE_BASE)
+else
+    # Doing a rc1 etc., so not a full release, use previous full version numbers
+    # Define a numeric version string
+    m4_define([version_number],
+              [m4_format([%u%03u%03u],
+                         libcoap_pre_major_version,
+                         libcoap_pre_minor_version,
+                         libcoap_pre_micro_version)])
+    LIBCOAP_VERSION=version_number
+    AC_SUBST(LIBCOAP_VERSION)
+
+    # Define a base version string
+    m4_define([base_version],
+              [m4_format([%u.%u.%u],
+                         libcoap_pre_major_version,
+                         libcoap_pre_minor_version,
+                         libcoap_pre_micro_version)])
+    LIBCOAP_PACKAGE_BASE=base_version
+    AC_SUBST(LIBCOAP_PACKAGE_BASE)
+fi
 
 # Adding some default warning options for code QS
 # see https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html
@@ -364,6 +402,7 @@ AM_CONDITIONAL(BUILD_MANPAGES, [test "x$build_manpages" = "xyes"])
 gnutls_version_required=3.3.0
 openssl_version_required=1.1.0
 mbedtls_version_required=2.7.10
+wolfssl_version_required=5.2.0
 tinydtls_version_required=0.8.6
 
 AC_ARG_ENABLE([dtls],
@@ -384,6 +423,12 @@ AC_ARG_WITH([openssl],
             [with_openssl="$withval"],
             [with_openssl="no"])
 
+AC_ARG_WITH([wolfssl],
+            [AS_HELP_STRING([--with-wolfssl],
+                            [Use wolfSSL for DTLS functions])],
+            [with_wolfssl="$withval"],
+            [with_wolfssl="no"])
+
 AC_ARG_WITH([mbedtls],
             [AS_HELP_STRING([--with-mbedtls],
                             [Use Mbed TLS for DTLS functions])],
@@ -402,11 +447,11 @@ AC_ARG_WITH([submodule-tinydtls],
            [with_submodule_tinydtls="$withval"],
            [with_submodule_tinydtls="explicit_fallback"])
 
-if test "x$with_gnutls" = "xyes" -o "x$with_openssl" = "xyes" -o "x$with_mbedtls" = "xyes" -o "x$with_tinydtls" = "xyes"; then
+if test "x$with_gnutls" = "xyes" -o "x$with_openssl" = "xyes" -o "x$with_wolfssl" = "xyes" -o "x$with_mbedtls" = "xyes" -o "x$with_tinydtls" = "xyes"; then
     if test "x$build_dtls" = "xno"; then
-        # Give an advice that '--with_gnutls', '--with_openssl', '--with-mbedtls' or '--with-tinydtls' was used but
+        # Give an advice that '--with_gnutls', '--with_openssl', '--with_wolfssl', '--with-mbedtls' or '--with-tinydtls' was used but
         # DTLS support isn't configured.
-        AC_MSG_WARN([==> Using the configure options '--with-gnutls', '--with-openssl', '--with-mbedtls' or '--with-tinydtls' without '--enable-dtls' is useless and will be ignored.])
+        AC_MSG_WARN([==> Using the configure options '--with-gnutls', '--with-openssl', '--with_wolfssl', '--with-mbedtls' or '--with-tinydtls' without '--enable-dtls' is useless and will be ignored.])
     fi
 fi
 if test "x$with_submodule_tinydtls" = "xyes"; then
@@ -424,6 +469,9 @@ if test "x$build_dtls" = "xyes"; then
         TLSCOUNT=`expr $TLSCOUNT + 1`
     fi
     if test "x$with_openssl" = "xyes"; then
+        TLSCOUNT=`expr $TLSCOUNT + 1`
+    fi
+    if test "x$with_wolfssl" = "xyes"; then
         TLSCOUNT=`expr $TLSCOUNT + 1`
     fi
     if test "x$with_mbedtls" = "xyes"; then
@@ -450,19 +498,87 @@ if test "x$build_dtls" = "xyes"; then
                       [have_openssl="yes"],
                       [have_openssl="no"])
 
-    # Mbed TLS [does not have mbedtls.pc pkg-config file]
-    AC_CHECK_LIB(mbedtls, mbedtls_version_get_string,
-                 [have_mbedtls="yes"; MbedTLS_CFLAGS="" ; MbedTLS_LIBS="-lmbedtls -lmbedcrypto -lmbedx509"],
-                 [have_mbedtls="no"], -lmbedx509 -lmbedcrypto)
+    # wolfSSL
+    PKG_CHECK_MODULES([wolfSSL],
+                  [wolfssl],
+                  [have_wolfssl="yes"],
+                  [have_wolfssl="no"])
+
+    # Mbed TLS
+    if test "x${MbedTLS_CFLAGS+set}" = "xset"; then
+        mbedtls_cflags_overridden="yes"
+    else
+        mbedtls_cflags_overridden="no"
+    fi
+
+    if test "x${MbedTLS_LIBS+set}" = "xset"; then
+        mbedtls_libs_overridden="yes"
+    else
+        mbedtls_libs_overridden="no"
+    fi
+
+    # If MbedTLS_CFLAGS and MbedTLS_LIBS are overridden, pkg-config will always assume the library was found, even
+    # though MbedTLS doesn't necessarily have a pkg-config file. Therefore, we might as well use the "old" way to
+    # determine whether we can link MbedTLS (and which version we have).
+    if test "x$mbedtls_libs_overridden" = "xyes" -a "x$mbedtls_cflags_overridden" = "xyes"; then
+      have_mbedtls="no"
+      mbedtls_has_pkgconfig="no"
+    else
+      # Attempt to find MbedTLS using pkg-config.
+
+      # When statically linking against libcoap, all transitive dependencies need to be specified as linker flags
+      # as well. Use pkg-config --static for that.
+      if test "x$enable_static" = "xyes"; then
+        KEEP_PKG_CONFIG=$PKG_CONFIG
+        PKG_CONFIG="$PKG_CONFIG --static"
+        PKG_CHECK_MODULES([MbedTLS],
+                          [mbedtls],
+                          [have_mbedtls="yes"; mbedtls_has_pkgconfig="yes"],
+                          [have_mbedtls="no"; mbedtls_has_pkgconfig="no"])
+        PKG_CONFIG=$KEEP_PKG_CONFIG
+      else
+        PKG_CHECK_MODULES([MbedTLS],
+                          [mbedtls],
+                          [have_mbedtls="yes"; mbedtls_has_pkgconfig="yes"],
+                          [have_mbedtls="no"; mbedtls_has_pkgconfig="no"])
+      fi
+    fi
+
+    if test "x$have_mbedtls" = "xno"; then
+      # Attempt to find mbedtls without pkg-config.
+
+      # default linker flags (default CFLAGS are empty, so they don't need to be set).
+      if test "x$mbedtls_libs_overridden" == "xno"; then
+        MbedTLS_LIBS="-lmbedtls -lmbedcrypto -lmbedx509"
+      fi
+
+      # check whether we can find MbedTLS
+      local_MbedTLS_save_CFLAGS=$CFLAGS
+      CFLAGS="$MbedTLS_CFLAGS $CFLAGS"
+      local_MbedTLS_save_LIBS=$LIBS
+      LIBS="$MbedTLS_LIBS $LIBS"
+      AC_CHECK_LIB(mbedtls, mbedtls_version_get_string,
+                   [have_mbedtls="yes"],
+                   [have_mbedtls="no"])
+      LIBS=$local_MbedTLS_save_LIBS
+      CFLAGS=$local_MbedTLS_save_CFLAGS
+    fi
+
+    # here, we know whether we can find MbedTLS, but need to determine the version.
     if test "x$have_mbedtls" = "xyes"; then
-        if test "x$cross_compiling" = "xyes" ; then
+        if test "x$mbedtls_has_pkgconfig" = "xyes"; then
+          # If pkg-config found mbedtls, use it to determine the version.
+          mbedtls_version=`$PKG_CONFIG --modversion mbedtls`;
+        elif test "x$cross_compiling" = "xyes" ; then
             # Have no option but to do this
             mbedtls_version=$mbedtls_version_required
         else
-            # Get actual library version
-            AC_LANG_PUSH(C)
+            # Get actual library version by compiling a test program.
+            local_MbedTLS_save_CFLAGS=$CFLAGS
+            CFLAGS="$MbedTLS_CFLAGS $CFLAGS"
             local_MbedTLS_save_LIBS=$LIBS
             LIBS="$MbedTLS_LIBS $LIBS"
+            AC_LANG_PUSH(C)
             AC_LINK_IFELSE([dnl
                 AC_LANG_SOURCE(
                     [[#include <stdio.h>
@@ -476,8 +592,9 @@ if test "x$build_dtls" = "xyes"; then
                [mbedtls_version=$(./conftest$EXEEXT)],
                [AC_MSG_WARN(Failed to determine Mbed TLS version)
                 have_mbedtls=no])
-            LIBS=$local_MbedTLS_save_LIBS
             AC_LANG_POP(C)
+            LIBS=$local_MbedTLS_save_LIBS
+            CFLAGS=$local_MbedTLS_save_CFLAGS
         fi
     fi
 
@@ -509,6 +626,7 @@ if test "x$build_dtls" = "xyes"; then
         gnutls_version=`$PKG_CONFIG --modversion gnutls`
         AX_CHECK_GNUTLS_VERSION
         have_openssl="no" # don't confuse AC_MSG_RESULT at the end of the script
+        have_wolfssl="no" # don't confuse AC_MSG_RESULT at the end of the script
         have_mbedtls="no" # don't confuse AC_MSG_RESULT at the end of the script
         have_tinydtls="no" # don't confuse AC_MSG_RESULT at the end of the script
     fi
@@ -527,6 +645,26 @@ if test "x$build_dtls" = "xyes"; then
         openssl_version=`$PKG_CONFIG --modversion openssl`
         AX_CHECK_OPENSSL_VERSION
         have_gnutls="no" # don't confuse AC_MSG_RESULT at the end of the script
+        have_wolfssl="no" # don't confuse AC_MSG_RESULT at the end of the script
+        have_mbedtls="no" # don't confuse AC_MSG_RESULT at the end of the script
+        have_tinydtls="no" # don't confuse AC_MSG_RESULT at the end of the script
+    fi
+
+    # The user wants to use explicit wolfSSL if '--with-wolfssl' was set.
+    if test "x$with_wolfssl" = "xyes"; then
+        # Some more sanity checking.
+        if test "x$have_wolfssl" != "xyes"; then
+            AC_MSG_ERROR([==> You want to build libcoap with DTLS support by the wolfSSL library but pkg-config file 'wolfssl.pc' could not be found!
+                    Install the package(s) that contains the development files for wolfSSL,
+                    or select a different TLS library or disable the DTLS support using '--disable-dtls'.])
+        fi
+        AC_MSG_NOTICE([The use of wolfSSL was explicitly requested with configure option '--with-wolfssl'!])
+
+        # check for valid wolfSSL version
+        wolfssl_version=`$PKG_CONFIG --modversion wolfssl`
+        AX_CHECK_WOLFSSL_VERSION
+        have_gnutls="no" # don't confuse AC_MSG_RESULT at the end of the script
+        have_openssl="no" # don't confuse AC_MSG_RESULT at the end of the script
         have_mbedtls="no" # don't confuse AC_MSG_RESULT at the end of the script
         have_tinydtls="no" # don't confuse AC_MSG_RESULT at the end of the script
     fi
@@ -541,11 +679,11 @@ if test "x$build_dtls" = "xyes"; then
         fi
         AC_MSG_NOTICE([The use of Mbed TLS was explicitly requested with configure option '--with-mbedtls'!])
 
-        # check for valid Mbed TLS version (mbedtls.pc does not exist - hmm)
         # mbedtls_version determined previously
         AX_CHECK_MBEDTLS_VERSION
         have_gnutls="no" # don't confuse AC_MSG_RESULT at the end of the script
         have_openssl="no" # don't confuse AC_MSG_RESULT at the end of the script
+        have_wolfssl="no" # don't confuse AC_MSG_RESULT at the end of the script
         have_tinydtls="no" # don't confuse AC_MSG_RESULT at the end of the script
     fi
 
@@ -597,6 +735,7 @@ if test "x$build_dtls" = "xyes"; then
 
         have_gnutls="no" # don't confuse AC_MSG_RESULT at the end of the script
         have_openssl="no" # don't confuse AC_MSG_RESULT at the end of the script
+        have_wolfssl="no" # don't confuse AC_MSG_RESULT at the end of the script
         have_mbedtls="no" # don't confuse AC_MSG_RESULT at the end of the script
     fi
 
@@ -609,6 +748,7 @@ if test "x$build_dtls" = "xyes"; then
           AC_MSG_NOTICE([Using auto selected library GnuTLS for DTLS support!])
           with_gnutls_auto="yes"
           have_openssl="no" # don't confuse AC_MSG_RESULT at the end of the script
+          have_wolfssl="no" # don't confuse AC_MSG_RESULT at the end of the script
           have_mbedtls="no" # don't confuse AC_MSG_RESULT at the end of the script
           have_tinydtls="no" # don't confuse AC_MSG_RESULT at the end of the script
 
@@ -618,7 +758,19 @@ if test "x$build_dtls" = "xyes"; then
           AX_CHECK_OPENSSL_VERSION
           AC_MSG_NOTICE([Using auto selected library OpenSSL for DTLS support!])
           with_openssl_auto="yes"
+          have_wolfssl="no" # don't confuse AC_MSG_RESULT at the end of the script
           have_gnutls="no" # don't confuse AC_MSG_RESULT at the end of the script
+          have_mbedtls="no" # don't confuse AC_MSG_RESULT at the end of the script
+          have_tinydtls="no" # don't confuse AC_MSG_RESULT at the end of the script
+
+      # ... and if not found, check if wolfSSL is suitable.
+      elif test "x$have_wolfssl" = "xyes"; then
+          wolfssl_version=`$PKG_CONFIG --modversion wolfssl`
+          AX_CHECK_WOLFSSL_VERSION
+          AC_MSG_NOTICE([Using auto selected library wolfSSL for DTLS support!])
+          with_wolfssl_auto="yes"
+          have_gnutls="no" # don't confuse AC_MSG_RESULT at the end of the script
+          have_openssl="no" # don't confuse AC_MSG_RESULT at the end of the script
           have_mbedtls="no" # don't confuse AC_MSG_RESULT at the end of the script
           have_tinydtls="no" # don't confuse AC_MSG_RESULT at the end of the script
 
@@ -630,6 +782,7 @@ if test "x$build_dtls" = "xyes"; then
           AC_MSG_NOTICE([Using auto selected library Mbed TLS for DTLS support!])
           with_mbedtls_auto="yes"
           have_gnutls="no" # don't confuse AC_MSG_RESULT at the end of the script
+          have_wolfssl="no" # don't confuse AC_MSG_RESULT at the end of the script
           have_openssl="no" # don't confuse AC_MSG_RESULT at the end of the script
           have_tinydtls="no" # don't confuse AC_MSG_RESULT at the end of the script
 
@@ -641,13 +794,13 @@ if test "x$build_dtls" = "xyes"; then
         have_gnutls="no" # don't confuse AC_MSG_RESULT at the end of the script
         have_mbedtls="no" # don't confuse AC_MSG_RESULT at the end of the script
         have_openssl="no" # don't confuse AC_MSG_RESULT at the end of the script
-
+        have_wolfssl="no" # don't confuse AC_MSG_RESULT at the end of the script
 
       # Note that the TinyDTLS submodule is used only when explicitly requested.
       # Giving out an error message if we haven't found at least one crypto library.
       else
-          AC_MSG_ERROR([==> Option '--enable-dtls' is set but none of the needed cryptography libraries GnuTLS, OpenSSL, Mbed TLS or TinyDTLS could be found!
-                        Install at least one of the package(s) that contains the development files for GnuTLS (>= $gnutls_version_required), OpenSSL(>= $openssl_version_required), Mbed TLS(>= $mbedtls_version_required), or TinyDTLS(>= $tinydtls_version_required)
+          AC_MSG_ERROR([==> Option '--enable-dtls' is set but none of the needed cryptography libraries GnuTLS, OpenSSL, wolfSSL, Mbed TLS or TinyDTLS could be found!
+                        Install at least one of the package(s) that contains the development files for GnuTLS (>= $gnutls_version_required), OpenSSL(>= $openssl_version_required), wolfSSL(>= $wolfssl_version_required), Mbed TLS(>= $mbedtls_version_required), or TinyDTLS(>= $tinydtls_version_required)
                         or disable the DTLS support using '--disable-dtls'.])
       fi
     fi
@@ -662,6 +815,11 @@ if test "x$build_dtls" = "xyes"; then
         DTLS_CFLAGS="$OpenSSL_CFLAGS"
         DTLS_LIBS="$OpenSSL_LIBS"
         AC_DEFINE(COAP_WITH_LIBOPENSSL, [1], [Define to 1 if the system has libssl1.1.])
+    fi
+    if test "x$with_wolfssl" = "xyes" -o "x$with_wolfssl_auto" = "xyes"; then
+        DTLS_CFLAGS="$wolfSSL_CFLAGS"
+        DTLS_LIBS="$wolfSSL_LIBS"
+        AC_DEFINE(COAP_WITH_LIBWOLFSSL, [1], [Define to 1 if the system has libwolfssl.])
     fi
     if test "x$with_mbedtls" = "xyes" -o "x$with_mbedtls_auto" = "xyes"; then
         DTLS_CFLAGS="$MbedTLS_CFLAGS"
@@ -680,6 +838,8 @@ fi
 # Define the Library name extension for the TLS the library was linked against
 if test "x$with_openssl" = "xyes" -o "x$with_openssl_auto" = "xyes"; then
     LIBCOAP_DTLS_LIB_EXTENSION_NAME=-openssl
+elif test "x$with_wolfssl" = "xyes" -o "x$with_wolfssl_auto" = "xyes"; then
+    LIBCOAP_DTLS_LIB_EXTENSION_NAME=-wolfssl
 elif test "x$with_gnutls" = "xyes" -o "x$with_gnutls_auto" = "xyes"; then
     LIBCOAP_DTLS_LIB_EXTENSION_NAME=-gnutls
 elif test "x$with_mbedtls" = "xyes" -o "x$with_mbedtls_auto" = "xyes"; then
@@ -966,6 +1126,26 @@ if test "x$with_epoll" = "xyes"; then
     AC_DEFINE(COAP_EPOLL_SUPPORT, 1, [Define to 1 if the system has epoll support.])
 fi
 
+AC_ARG_ENABLE([thread-safe],
+        [AS_HELP_STRING([--enable-thread-safe],
+                        [Enable building with thread safe support [default=yes]])],
+        [enable_thread_safe="$enableval"],
+        [enable_thread_safe="yes"])
+
+if test "x$enable_thread_safe" = "xyes"; then
+    AC_DEFINE(COAP_THREAD_SAFE, 1, [Define to 1 if libcoap has thread safe support])
+fi
+
+AC_ARG_ENABLE([thread-recursive-lock-detection],
+        [AS_HELP_STRING([--enable-thread-recursive-lock-detection],
+                        [Enable building with thread recursive locking detection support [default=yes]])],
+        [enable_recursive_detection="$enableval"],
+        [enable_recursive_detection="yes"])
+
+if test "x$enable_recursive_detection" = "xyes"; then
+    AC_DEFINE(COAP_THREAD_RECURSIVE_CHECK, 1, [Define to 1 detect recursive locking detection support])
+fi
+
 AC_ARG_ENABLE([small-stack],
         [AS_HELP_STRING([--enable-small-stack],
                         [Use small-stack if the available stack space is restricted [default=no]])],
@@ -999,6 +1179,22 @@ fi
 AM_CONDITIONAL(HAVE_CLIENT_SUPPORT, [test "x$enable_client_mode" = "xyes"])
 if test "x$enable_server_mode" != "xyes" -a "x$enable_client_mode" != "xyes" ; then
     AC_MSG_ERROR([==> One or both of '--enable-server-mode' and '--enable-client-mode' need to be set!])
+fi
+
+AC_ARG_ENABLE([proxy-code],
+        [AS_HELP_STRING([--enable-proxy-code],
+                        [Enable CoAP proxy supporting code [default=yes]])],
+        [enable_proxy_code="$enableval"],
+        [enable_proxy_code="yes"])
+
+if test "x$enable_proxy_code" = "xyes"; then
+    if test "x$enable_server_mode" != "xyes" -o "x$enable_client_mode" != "xyes" ; then
+        AC_MSG_WARN([==> Both of '--enable-server-mode' and '--enable-client-mode' need to be set for --enable-proxy-code!])
+        enable_proxy_code="no"
+    fi
+fi
+if test "x$enable_proxy_code" = "xyes"; then
+    AC_DEFINE(COAP_PROXY_SUPPORT, 1, [Define to 1 if libcoap supports proxy code.])
 fi
 
 AC_ARG_ENABLE([max-logging-level],
@@ -1100,9 +1296,19 @@ case $host in
     LIBS="${LIBS} -lws2_32"
     ;;
 
+    *-qnx*)
+    AC_MSG_RESULT([QNX])
+    ADDITIONAL_CFLAGS="-D_QNX_SOURCE"
+    ;;
+
+    *xtensa-esp32-elf*)
+    AC_MSG_RESULT([XtensaEsp32Elf])
+    ADDITIONAL_CFLAGS="-D_GNU_SOURCE -DWITH_POSIX"
+    ;;
+
     *)
     AC_MSG_WARN([==> Currently unsupported operating system '${host}' !])
-    AC_MSG_ERROR([==> If you can provide patches to support your operating system please write to 'libcoap-developers@lists.sourceforge.net'.])
+    AC_MSG_ERROR([==> If you can provide patches to support your operating system please raise a Pull Request at 'https://github.com/obgm/libcoap/pulls'.])
 esac
 
 # Exporting the PREDEFINED_CFLAGS definition
@@ -1121,14 +1327,8 @@ CFLAGS="$CFLAGS $ADDITIONAL_CFLAGS"
 #
 AC_CONFIG_FILES([
 Makefile
-coap_config.h.riot
-coap_config.h.windows
 doc/Makefile
 examples/Makefile
-examples/lwip/config/coap_config.h
-include/coap$LIBCOAP_API_VERSION/coap.h
-include/coap$LIBCOAP_API_VERSION/coap.h.riot
-include/coap$LIBCOAP_API_VERSION/coap.h.windows
 man/coap.txt
 man/coap_address.txt
 man/coap_async.txt
@@ -1144,6 +1344,7 @@ man/coap_handler.txt
 man/coap_init.txt
 man/coap_io.txt
 man/coap_keepalive.txt
+man/coap_locking.txt
 man/coap_logging.txt
 man/coap_lwip.txt
 man/coap_observe.txt
@@ -1151,10 +1352,12 @@ man/coap_oscore.txt
 man/coap_pdu_access.txt
 man/coap_pdu_setup.txt
 man/coap_persist.txt
+man/coap_proxy.txt
 man/coap_recovery.txt
 man/coap_resource.txt
 man/coap_session.txt
 man/coap_string.txt
+man/coap_supported.txt
 man/coap_tls_library.txt
 man/coap_uri.txt
 man/coap_websockets.txt
@@ -1162,7 +1365,9 @@ man/coap-client.txt
 man/coap-oscore-conf.txt
 man/coap-server.txt
 man/coap-rd.txt
+man/coap-tls-engine-conf.txt
 man/Makefile
+scripts/fix_version.sh
 tests/test_common.h
 tests/Makefile
 tests/oss-fuzz/Makefile.ci
@@ -1195,6 +1400,11 @@ if test "x$enable_client_mode" = "xyes"; then
 else
     AC_MSG_RESULT([      build with client support      : "no"])
 fi
+if test "x$enable_client_mode" = "xyes"; then
+    AC_MSG_RESULT([      build with proxy support       : "yes"])
+else
+    AC_MSG_RESULT([      build with proxy support       : "no"])
+fi
 if test "x$build_ipv4" != "xno"; then
     AC_MSG_RESULT([      build with IPv4 support        : "yes"])
 else
@@ -1218,20 +1428,30 @@ fi
 if test "x$with_gnutls" = "xyes" -o "x$with_gnutls_auto" = "xyes"; then
     AC_MSG_RESULT([      build DTLS support             : "yes"])
     AC_MSG_RESULT([          -->  GnuTLS around         : "yes" (found GnuTLS $gnutls_version)])
-    AC_MSG_RESULT([               GNUTLS_CFLAGS         : "$GnuTLS_CFLAGS"])
-    AC_MSG_RESULT([               GNUTLS_LIBS           : "$GnuTLS_LIBS"])
+    AC_MSG_RESULT([               GnuTLS_CFLAGS         : "$GnuTLS_CFLAGS"])
+    AC_MSG_RESULT([               GnuTLS_LIBS           : "$GnuTLS_LIBS"])
 fi
 if test "x$with_openssl" = "xyes" -o "x$with_openssl_auto" = "xyes"; then
     AC_MSG_RESULT([      build DTLS support             : "yes"])
     AC_MSG_RESULT([         -->  OpenSSL around         : "yes" (found OpenSSL $openssl_version)])
-    AC_MSG_RESULT([              OPENSSL_CFLAGS         : "$OpenSSL_CFLAGS"])
-    AC_MSG_RESULT([              OPENSSL_LIBS           : "$OpenSSL_LIBS"])
+    AC_MSG_RESULT([              OpenSSL_CFLAGS         : "$OpenSSL_CFLAGS"])
+    AC_MSG_RESULT([              OpenSSL_LIBS           : "$OpenSSL_LIBS"])
+fi
+if test "x$with_wolfssl" = "xyes" -o "x$with_wolfssl_auto" = "xyes"; then
+    AC_MSG_RESULT([      build DTLS support             : "yes"])
+    AC_MSG_RESULT([         -->  wolfSSL around         : "yes" (found wolfSSL $wolfssl_version)])
+    AC_MSG_RESULT([              wolfSSL_CFLAGS         : "$wolfSSL_CFLAGS"])
+    AC_MSG_RESULT([              wolfSSL_LIBS           : "$wolfSSL_LIBS"])
 fi
 if test "x$with_mbedtls" = "xyes" -o "x$with_mbedtls_auto" = "xyes"; then
     AC_MSG_RESULT([      build DTLS support             : "yes"])
-    AC_MSG_RESULT([         -->  Mbed TLS around        : "yes" (found Mbed TLS $mbedtls_version)])
-    AC_MSG_RESULT([              MBEDTLS_CFLAGS         : "$MbedTLS_CFLAGS"])
-    AC_MSG_RESULT([              MBEDTLS_LIBS           : "$MbedTLS_LIBS"])
+    if test "x$mbedtls_has_pkgconfig" = "xyes"; then
+      AC_MSG_RESULT([         -->  Mbed TLS around        : "yes" (found Mbed TLS $mbedtls_version using pkg-config)])
+    else
+      AC_MSG_RESULT([         -->  Mbed TLS around        : "yes" (found Mbed TLS $mbedtls_version without pkg-config)])
+    fi
+    AC_MSG_RESULT([              MbedTLS_CFLAGS         : "$MbedTLS_CFLAGS"])
+    AC_MSG_RESULT([              MbedTLS_LIBS           : "$MbedTLS_LIBS"])
 fi
 if test "x$with_tinydtls" = "xyes"; then
     AC_MSG_RESULT([      build DTLS support             : "yes"])
@@ -1280,6 +1500,8 @@ if test "x$enable_max_logging_level" != "x8"; then
 else
     AC_MSG_RESULT([      enable max logging level       : "none"])
 fi
+AC_MSG_RESULT([      enable thread safe code        : "$enable_thread_safe"])
+AC_MSG_RESULT([      enable recursive lock check    : "$enable_recursive_detection"])
 if test "x$build_doxygen" = "xyes"; then
     AC_MSG_RESULT([      build doxygen pages            : "yes"])
     AC_MSG_RESULT([          --> Doxygen around         : "yes" ($DOXYGEN $doxygen_version)])
@@ -1327,4 +1549,10 @@ if test "x$enable_static" = "xyes"; then
     AC_MSG_RESULT([      build static library           : "yes"])
 else
     AC_MSG_RESULT([      build static library           : "no"])
+fi
+
+mkdir -p include/coap$LIBCOAP_API_VERSION
+LT_TEMP=`grep -B2 " COAP_" coap_config.h > include/coap$LIBCOAP_API_VERSION/coap_defines.h`
+if test "x$LT_TEMP" != "x" ; then
+    AC_MSG_ERROR([Unable to build coap_defines.h])
 fi

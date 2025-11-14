@@ -42,6 +42,9 @@ src = [
   "src/coap_subscribe.c",
   "src/coap_uri.c",
   "src/coap_ws.c",
+  "src/coap_proxy.c",
+  "src/coap_sha1.c",
+  "src/coap_threadsafe.c",
 ]
 
 if (defined(ohos_lite)) {

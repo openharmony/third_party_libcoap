@@ -18,6 +18,7 @@
 #define COAP_MEM_H_
 
 #include "coap3/coap_oscore.h"
+#include "coap3/coap_proxy.h"
 #include <stdlib.h>
 
 #ifndef WITH_LWIP
@@ -64,6 +65,7 @@ typedef enum {
   COAP_OSCORE_EP,
   COAP_OSCORE_BUF,
   COAP_COSE,
+  COAP_MEM_TAG_LAST
 } coap_memory_tag_t;
 
 #ifndef WITH_LWIP
@@ -107,6 +109,15 @@ void *coap_realloc_type(coap_memory_tag_t type, void *p, size_t size);
 void coap_free_type(coap_memory_tag_t type, void *p);
 
 /**
+ * Dumps the current usage of malloc'd memory types.
+ *
+ * Requires COAP_MEMORY_TYPE_TRACK to be defined to 1.
+ *
+ * @param log_level The logging level to use.
+ */
+void coap_dump_memory_type_counts(coap_log_t log_level);
+
+/**
  * Wrapper function to coap_malloc_type() for backwards compatibility.
  */
 COAP_STATIC_INLINE void *
@@ -133,13 +144,26 @@ coap_free(void *object) {
 COAP_STATIC_INLINE void
 coap_memory_init(void) {}
 
+#if MEMP_STATS
+COAP_STATIC_INLINE void *
+coap_malloc_error(uint16_t *err) {
+  (*err)++;
+  return NULL;
+}
+#endif /* MEMP_STATS */
 /* It would be nice to check that size equals the size given at the memp
  * declaration, but i currently don't see a standard way to check that without
  * sourcing the custom memp pools and becoming dependent of its syntax
  */
+#if MEMP_STATS
+#define coap_malloc_type(type, asize) \
+  (((asize) <= memp_pools[MEMP_ ## type]->size) ? \
+   memp_malloc(MEMP_ ## type) : coap_malloc_error(&memp_pools[MEMP_ ## type]->stats->err))
+#else /* ! MEMP_STATS */
 #define coap_malloc_type(type, asize) \
   (((asize) <= memp_pools[MEMP_ ## type]->size) ? \
    memp_malloc(MEMP_ ## type) : NULL)
+#endif /* ! MEMP_STATS */
 #define coap_free_type(type, p) memp_free(MEMP_ ## type, p)
 
 /* As these are fixed size, return value if already defined */
@@ -160,6 +184,8 @@ coap_free(void *pointer) {
   (void)pointer;
   LWIP_ASSERT("coap_free must not be used in lwIP", 0);
 }
+
+#define coap_dump_memory_type_counts(l) coap_lwip_dump_memory_pools(l)
 
 #endif /* WITH_LWIP */
 

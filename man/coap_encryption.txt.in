@@ -28,7 +28,8 @@ SYNOPSIS
 
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -40,6 +41,7 @@ When the libcoap library was built, it will have been compiled using a
 specific underlying TLS implementation type (e.g. https://www.openssl.org[OpenSSL],
 https://www.gnutls.org[GnuTLS],
 https://www.trustedfirmware.org/projects/mbed-tls/[Mbed TLS],
+https://wolfssl.com[wolfSSL],
 https://github.com/eclipse/tinydtls[TinyDTLS] or noTLS).
 When the libcoap library is linked into an application, it is possible
 that the application needs to dynamically determine whether DTLS or TLS is
@@ -55,11 +57,20 @@ version is 1.1.0.
 *NOTE:* If Mbed TLS is being used, then the minimum Mbed TLS library version is
 2.7.10.
 
+*NOTE:* If wolfSSL is being used, then the minimum wolfSSL library version is
+5.2.0.
+
 *NOTE:* If GnuTLS is going to interoperate with TinyDTLS, then a minimum
 revision of GnuTLS 3.5.5 which supports CCM algorithms is required
 by TinyDTLS as TinyDTLS currently only supports CCM.
 
+*NOTE:* If wolfSSL is going to interoperate with TinyDTLS, then the library
+needs to be build with
+'./configure CFLAGS="-DBUILD_TLS_PSK_WITH_AES_128_CCM"'
+as TinyDTLS currently only supports CCM.
+
 *NOTE:* For Raw Public Key support, GnuTLS library version must be 3.6.6 or
+later. For Raw Public Key support, wolfSSL library version must be 5.6.4 or
 later. TinyDTLS only supports TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8, curve
 secp256r1 and hash SHA-256.  There currently is no OpenSSL or Mbed TLS RPK support
 (respective library limitations).
@@ -129,7 +140,14 @@ typedef struct coap_dtls_cpsk_t {
                        to support the version of the struct */
 
   /* Options to enable different TLS functionality in libcoap */
-  uint8_t reserved[7];             /* Reserved - must be set to 0 for
+  uint8_t ec_jpake;        /* Set to 1 if DC-JPAKE is to be used.
+                              Currently Mbed TLS only */
+
+  uint8_t use_cid;         /* Set to 1 if DTLS Connection ID is to be used.
+                              Currently Mbed TLS only */
+
+  /* Options to enable different TLS functionality in libcoap */
+  uint8_t reserved[5];             /* Reserved - must be set to 0 for
                                       future compatibility */
 
   /** Identity Hint check callback function.
@@ -144,6 +162,7 @@ typedef struct coap_dtls_cpsk_t {
   char* client_sni;    /*  If not NULL, SNI to use in client TLS setup.
                            Owned by the client app and must remain valid
                            during the call to coap_new_client_session_pki().
+                           Note: Ignored if literal IPv4 or IPv6 address.
                            Note: Not supported by TinyDTLS. */
 
   coap_dtls_cpsk_info_t psk_info;  /* Client PSK definition */
@@ -165,6 +184,16 @@ definition.
 
 *version* is set to COAP_DTLS_CPSK_SETUP_VERSION.  This will then allow
 support for different versions of the coap_dtls_cpsk_t structure in the future.
+
+*SECTION: PSK Client: coap_dtls_cpsk_t: ec_jpake*
+
+*ec_jpake* Set to 1 if EC-JPAKE negotiation is to be used. Currently only
+supported by suitably compiled Mbed TLS library.
+
+*SECTION: PSK Client: coap_dtls_cpsk_t: use_cid*
+
+*use_cid* Set to 1 if the DTLS Client is to try to used Connection-ID.
+Server is alwys enabled if support available.
 
 *SECTION: PSK Client: coap_dtls_cpsk_t: Reserved*
 
@@ -218,6 +247,8 @@ trying to contact.  The server is then able to decide, based on the name in the
 SNI extension, whether, for example, a different Hint and/or Pre-Shared Key is
 to be used.
 
+*NOTE:* Ignored if literal IPv4 or IPv6 address.
+
 *NOTE:* Not supported by TinyDTLS.
 
 *SECTION: PSK Client: coap_dtls_cpsk_t: PSK Client Definitions*
@@ -248,11 +279,15 @@ environment.
 [source, c]
 ----
 typedef struct coap_dtls_spsk_t {
-  uint8_t version; /** Set to COAP_DTLS_SPSK_SETUP_VERSION
+  uint8_t version; /* Set to COAP_DTLS_SPSK_SETUP_VERSION
                        to support the version of the struct */
 
   /* Options to enable different TLS functionality in libcoap */
-  uint8_t reserved[7];             /* Reserved - must be set to 0 for
+  uint8_t ec_jpake;        /* Set to 1 if DC-JPAKE can be used.
+                              Currently Mbed TLS only */
+
+  /* Options to enable different TLS functionality in libcoap */
+  uint8_t reserved[6];             /* Reserved - must be set to 0 for
                                       future compatibility */
 
   /** Identity check callback function.
@@ -289,6 +324,11 @@ definition.
 
 *version* is set to COAP_DTLS_SPSK_SETUP_VERSION.  This will then allow
 support for different versions of the coap_dtls_spsk_t structure in the future.
+
+*SECTION: PSK Server: coap_dtls_spsk_t: ec_jpake*
+
+*ec_jpake* Set to 1 if EC-JPAKE negotiation can be used. Currently only
+supported by suitably compiled Mbed TLS library.
 
 *SECTION: PSK Server: coap_dtls_spsk_t: Reserved*
 
@@ -436,7 +476,10 @@ typedef struct coap_dtls_pki_t {
   uint8_t is_rpk_not_cert;          /* 1 is RPK instead of Public Certificate.
                                      *   If set, PKI key format type cannot be
                                      *   COAP_PKI_KEY_PEM */
-  uint8_t reserved[3];              /* Reserved - must be set to 0 for
+  uint8_t use_cid;                  /* 1 if DTLS Connection ID is to be
+                                     *   used (Client only, server always enabled)
+                                     *   if supported */
+  uint8_t reserved[2];              /* Reserved - must be set to 0 for
                                        future compatibility */
 
   /** CN check callback function
@@ -463,7 +506,8 @@ typedef struct coap_dtls_pki_t {
 
   char* client_sni;       /* If not NULL, SNI to use in client TLS setup.
                              Owned by the client app and must remain valid
-                             during the call to coap_new_client_session_pki() */
+                             during the call to coap_new_client_session_pki().
+                             Note: Ignored if literal IPv4 or IPv6 address. */
 
   coap_dtls_key_t pki_key; /* PKI key definition */
 } coap_dtls_pki_t;
@@ -543,6 +587,9 @@ cert_chain_validation, cert_chain_verify_depth, check_cert_revocation,
 allow_no_crl, allow_expired_crl, allow_bad_md_hash and
 allow_short_rsa_length settings are all ignored.
 
+*use_cid* Set to 1 if the DTLS Client is to try to used Connection-ID.
+Server is alwys enabled if support available.
+
 *SECTION: PKI/RPK: coap_dtls_pki_t: Reserved*
 
 *reserved* All must be set to 0.  Future functionality updates will make use of
@@ -601,6 +648,7 @@ typedef struct coap_dtls_key_t {
     coap_pki_key_pem_buf_t pem_buf; /* for PEM memory keys */
     coap_pki_key_asn1_t asn1;       /* for ASN.1 (DER) memory keys */
     coap_pki_key_pkcs11_t pkcs11;   /* for PKCS11 keys */
+    coap_pki_key_define_t define;   /* definable type keys */
   } key;
 } coap_dtls_key_t;
 
@@ -668,6 +716,8 @@ trying to contact.  This is only used by a client application and the server
 is then able to decide, based on the name in the SNI extension, whether, for
 example, a different certificate should be provided.
 
+*NOTE:* Ignored if literal IPv4 or IPv6 address.
+
 *SECTION: PKI/RPK: coap_dtls_pki_t: Key Type Definition*
 [source, c]
 ----
@@ -676,18 +726,20 @@ typedef enum coap_pki_key_t {
   COAP_PKI_KEY_ASN1,    /* The PKI key type is ASN.1 (DER) buffer */
   COAP_PKI_KEY_PEM_BUF, /* The PKI key type is PEM buffer */
   COAP_PKI_KEY_PKCS11,  /* The PKI key type is PKCS11 (DER) */
+  COAP_PKI_KEY_DEFINE,  /* The individual PKI key types are Definable */
 } coap_pki_key_t;
 ----
 
 *key_type* defines the format that the certificates / keys are provided in.
-This can be COAP_PKI_KEY_PEM, COAP_PKI_KEY_PEM_BUF, COAP_PKI_KEY_ASN1 or
-COAP_PKI_KEY_PKCS11.
+This can be COAP_PKI_KEY_PEM, COAP_PKI_KEY_PEM_BUF, COAP_PKI_KEY_ASN1
+COAP_PKI_KEY_PKCS11 or COAP_PKI_KEY_DEFINE.
 
 *SECTION: PKI: coap_dtls_pki_t: PEM Key Definitions*
 [source, c]
 ----
 typedef struct coap_pki_key_pem_t {
-  const char *ca_file;       /* File location of Common CA in PEM format */
+  const char *ca_file;       /* File location of Common CA (and any
+                                intermediates) in PEM format */
   const char *public_cert;   /* File location of Public Cert */
   const char *private_key;   /* File location of Private Key in PEM format */
 } coap_pki_key_pem_t;
@@ -700,7 +752,8 @@ requesting the client's certificate. This certificate is also added into
 the valid root CAs list if not already present.
 
 *key.pem.public_cert* points to the public certificate location on disk which
-will be in PEM format.
+will be in PEM format. This can be the entire certificate chain including the
+CAs.
 
 *key.pem.private_key* points to the private key location on disk which
 will be in PEM format.  This file cannot be password protected.
@@ -808,7 +861,7 @@ typedef struct coap_pki_key_pkcs11_t {
   const char *ca;            /* pkcs11: URI for Common CA Certificate */
   const char *public_cert;   /* pkcs11: URI for Public Cert */
   const char *private_key;   /* pkcs11: URI for Private Key */
-  const char *pin;           /* pin to access PKCS11.  If NULL, then
+  const char *user_pin;      /* User pin to access PKCS11.  If NULL, then
                                 pin-value= parameter must be set in
                                 pkcs11: URI as a query. */
 } coap_pki_key_pkcs11_t;
@@ -832,6 +885,106 @@ If NULL, the pin can be defined on the other pkcs11: URI entries by using
 pin-value=XXX as a query - e.g.
 'pkcs11:pkcs11:token=My%20Token;id=%aa%bb%cc%dd?pin-value=XXX' where XXX is
 the user pin.
+
+*SECTION: PKI/RPK: coap_dtls_pki_t: Individual Cert/Key type Definitions*
+[source, c]
+----
+typedef struct coap_pki_key_define_t {
+  coap_const_char_ptr_t ca;          /* define: Common CA Certificate */
+  coap_const_char_ptr_t public_cert; /* define: Public Cert */
+  coap_const_char_ptr_t private_key; /* define: Private Key */
+  size_t ca_len;             /* define CA Cert length (if needed)*/
+  size_t public_cert_len;    /* define Public Cert length (if needed)*/
+  size_t private_key_len;    /* define Private Key length (if needed)*/
+  coap_pki_define_t ca_def;  /* define: Common CA type definition*/
+  coap_pki_define_t public_cert_def;  /* define: Public Cert type definition*/
+  coap_pki_define_t private_key_def;  /* define: Private Key type definition*/
+  coap_asn1_privatekey_type_t private_key_type; /* define: ASN1 Private Key
+                                                   Type (if needed) */
+  const char *user_pin;      /* define: User pin to access type PKCS11.
+                                If PKCS11 and NULL, then pin-value= parameter
+                                must be set in pkcs11: URI as a query. */
+} coap_pki_key_define_t;
+
+typedef union {
+  const char *s_byte;    /* signed char ptr */
+  const uint8_t *u_byte; /* unsigned char ptr */
+} coap_const_char_ptr_t;
+
+typedef enum coap_pki_define_t {
+  COAP_PKI_KEY_DEF_PEM = 0, /* The PKI key type is PEM file.
+                               Length ignored, NULL terminated. */
+  COAP_PKI_KEY_DEF_PEM_BUF, /* The PKI key type is PEM buffer.
+                               Length required. */
+  COAP_PKI_KEY_DEF_RPK_BUF, /* The PKI key type is RPK in buffer.
+                               Length required. */
+  COAP_PKI_KEY_DEF_DER,     /* The PKI key type is DER file.
+                               Length ignored, NULL terminated. */
+  COAP_PKI_KEY_DEF_DER_BUF, /* The PKI key type is DER buffer (ASN.1).
+                               Length required.
+                               Private Key Type required. */
+  COAP_PKI_KEY_DEF_PKCS11,  /* The PKI key type is PKCS11 (pkcs11:...).
+                               Length ignored, NULL terminated.
+                               User Pin optional. */
+  COAP_PKI_KEY_DEF_PKCS11_RPK, /* The PKI key type is PKCS11 w/ RPK (pkcs11:...).
+                               Length ignored, NULL terminated.
+                               User Pin optional. */
+  COAP_PKI_KEY_DEF_ENGINE,  /* The PKI key type is to be passed to ENGINE.
+                               Length ignored, NULL terminated.
+                               Supported by OpenSSL only */
+} coap_pki_define_t;
+----
+
+*key.define.ca.[su]_char* and possibly *key.define.ca_len* points to the CA
+location as defined by *key.define.ca_def*. *key.define.ca.[su]_char* can be
+NULL if there is no CA explicitely defined.  This definition should only
+contain one CA (that has signed the public certificate) as this is passed
+from the server to the client when requesting the client's certificate. This
+certificate is also added into the valid root CAs list if not already present.
+
+*key.define.public_cert.[su]_char* and possibly *key.define.public_cert_len*
+points to the public certificate location as defined by
+*key.define.public_cert_def*.
+
+*key.define.private_key.[su]_char* and possibly *key.define.privatr_key_len*
+points to the private key location as defined by *key.define.private_key_def*.
+This information cannot be password protected, but for type PKCS11
+*key.define.user_pin* can be defined. If type RPK and
+'EC PRIVATE KEY' this can be used for both the public_cert and private_key.
+
+*key.define.ca_len* is the optional length of the CA definition if
+required by *key.define.ca_def*.
+
+*key.define.public_cert_len* is the optional length of the public
+certificate definition if required by *key.define.public_cert_def*
+
+*key.define.private_key_len* is the optional length of the private key
+definition if required by *key.define.private_key_def*.
+
+*key.define.ca_def* defines the type of the CA entry, one of
+*coap_pki_define_t*.
+
+*key.define.public_cert_def* defines the type of the Public Cert/Key entry,
+one of *coap_pki_define_t*.
+
+*key.define.private_key_def* defines the type of the Private Key entry,
+one of *coap_pki_define_t*.
+
+*key.define.private_key_type* is the encoding type of the DER encoded ASN.1
+definition of the private key.  This will be one of the COAP_ASN1_PKEY_*
+definitions.
+
+*key.define.user_pin* is the user pin used to unlock the token or NULL if
+type is PKCS11.
+If NULL, the pin can be defined on the pkcs11: URI entry by using
+pin-value=XXX as a query - e.g.
+'pkcs11:pkcs11:token=My%20Token;id=%aa%bb%cc%dd?pin-value=XXX' where XXX is
+the user pin.
+
+*NOTE:* The PEM/ASN1/RPK buffer Certs and Key should be be NULL terminated strings for
+performance reasons (to save a potential buffer copy) and the length include
+this NULL terminator. It is not a requirement to have the NULL terminator
+though and the length must then reflect the actual data size.
 
 EXAMPLES
 --------
@@ -872,9 +1025,8 @@ verify_cn_callback(const char *cn,
                    coap_session_t *c_session,
                    unsigned depth,
                    int validated,
-                   void *arg
-) {
-  valid_cns_t *valid_cn_list = (valid_cns_t*)arg;
+                   void *arg) {
+  valid_cns_t *valid_cn_list = (valid_cns_t *)arg;
   int i;
   /* Remove (void) definition if variable is used */
   (void)asn1_public_cert;
@@ -893,7 +1045,7 @@ verify_cn_callback(const char *cn,
 }
 
 typedef struct sni_def_t {
-  char* sni;
+  char *sni;
   coap_dtls_key_t key;
 } sni_def_t;
 
@@ -916,8 +1068,7 @@ typedef struct valid_snis_t {
  */
 static coap_dtls_key_t *
 verify_pki_sni_callback(const char *sni,
-                        void *arg
-) {
+                        void *arg) {
   valid_snis_t *valid_sni_list = (valid_snis_t *)arg;
   int i;
 
@@ -934,12 +1085,11 @@ verify_pki_sni_callback(const char *sni,
  * Set up PKI encryption information
  */
 static coap_context_t *
-setup_server_context_pki (const char *public_cert_file,
-                          const char *private_key_file,
-                          const char *ca_file,
-                          valid_cns_t *valid_cn_list,
-                          valid_snis_t *valid_sni_list
-) {
+setup_server_context_pki(const char *public_cert_file,
+                         const char *private_key_file,
+                         const char *ca_file,
+                         valid_cns_t *valid_cn_list,
+                         valid_snis_t *valid_sni_list) {
   coap_endpoint_t *endpoint;
   coap_address_t listen_addr;
   coap_dtls_pki_t dtls_pki;
@@ -958,7 +1108,7 @@ setup_server_context_pki (const char *public_cert_file,
                               COAP_BLOCK_USE_LIBCOAP | COAP_BLOCK_SINGLE_BODY);
 
 
-  memset (&dtls_pki, 0, sizeof (dtls_pki));
+  memset(&dtls_pki, 0, sizeof(dtls_pki));
 
   dtls_pki.version                 = COAP_DTLS_PKI_SETUP_VERSION;
   dtls_pki.verify_peer_cert        = 1;
@@ -984,6 +1134,18 @@ setup_server_context_pki (const char *public_cert_file,
   dtls_pki.pki_key.key.pem.public_cert = public_cert_file;
   dtls_pki.pki_key.key.pem.private_key = private_key_file;
 
+  /* Alternative definition for dtls_pki.pki_key that does the
+   * same thing as above.
+   *
+   * dtls_pki.pki_key.key_type                      = COAP_PKI_KEY_DEFINE;
+   * dtls_pki.pki_key.key.define.ca.s_byte          = ca_file;
+   * dtls_pki.pki_key.key.define.public_cert.s_byte = public_cert_file;
+   * dtls_pki.pki_key.key.define.private_key.s_byte = private_key_file;
+   * dtls_pki.pki_key.key.define.ca_def             = COAP_PKI_KEY_DEF_PEM;
+   * dtls_pki.pki_key.key.define.public_cert_def    = COAP_PKI_KEY_DEF_PEM;
+   * dtls_pki.pki_key.key.define.private_key_def    = COAP_PKI_KEY_DEF_PEM;
+   */
+
   /* See coap_context(3) */
   if (coap_context_set_pki(context, &dtls_pki)) {
     coap_free_context(context);
@@ -992,7 +1154,7 @@ setup_server_context_pki (const char *public_cert_file,
 
   coap_address_init(&listen_addr);
   listen_addr.addr.sa.sa_family = AF_INET;
-  listen_addr.addr.sin.sin_port = htons (5684);
+  listen_addr.addr.sin.sin_port = htons(5684);
 
   /* See coap_context(3) */
   endpoint = coap_new_endpoint(context, &listen_addr, COAP_PROTO_DTLS);
@@ -1029,9 +1191,8 @@ typedef struct valid_ids_t {
 static const coap_bin_const_t *
 verify_id_callback(coap_bin_const_t *identity,
                    coap_session_t *c_session,
-                   void *arg
-) {
-  valid_ids_t *valid_id_list = (valid_ids_t*)arg;
+                   void *arg) {
+  valid_ids_t *valid_id_list = (valid_ids_t *)arg;
   const coap_bin_const_t *s_psk_hint = coap_session_get_psk_hint(c_session);
   size_t i;
 
@@ -1050,7 +1211,7 @@ verify_id_callback(coap_bin_const_t *identity,
 }
 
 typedef struct sni_psk_def_t {
-  char* sni;
+  char *sni;
   coap_dtls_spsk_info_t psk_info;
 } sni_psk_def_t;
 
@@ -1065,8 +1226,7 @@ typedef struct valid_psk_snis_t {
 static const coap_dtls_spsk_info_t *
 verify_psk_sni_callback(const char *sni,
                         coap_session_t *c_session,
-                        void *arg
-) {
+                        void *arg) {
   valid_psk_snis_t *valid_sni_list = (valid_psk_snis_t *)arg;
   int i;
   /* Remove (void) definition if variable is used */
@@ -1082,12 +1242,11 @@ verify_psk_sni_callback(const char *sni,
 }
 
 static coap_context_t *
-setup_server_context_psk (const char *hint,
-                          const uint8_t *key,
-                          unsigned int key_len,
-                          valid_ids_t *valid_id_list,
-                          valid_psk_snis_t *valid_sni_list
-) {
+setup_server_context_psk(const char *hint,
+                         const uint8_t *key,
+                         unsigned int key_len,
+                         valid_ids_t *valid_id_list,
+                         valid_psk_snis_t *valid_sni_list) {
   coap_endpoint_t *endpoint;
   coap_address_t listen_addr;
   coap_context_t *context;
@@ -1105,7 +1264,7 @@ setup_server_context_psk (const char *hint,
                               COAP_BLOCK_USE_LIBCOAP | COAP_BLOCK_SINGLE_BODY);
 
 
-  memset (&dtls_psk, 0, sizeof (dtls_psk));
+  memset(&dtls_psk, 0, sizeof(dtls_psk));
 
   /* see coap_encryption(3) */
   dtls_psk.version                 = COAP_DTLS_SPSK_SETUP_VERSION;
@@ -1113,7 +1272,7 @@ setup_server_context_psk (const char *hint,
   dtls_psk.id_call_back_arg        = valid_id_list;
   dtls_psk.validate_sni_call_back  = verify_psk_sni_callback;
   dtls_psk.sni_call_back_arg       = valid_sni_list;
-  dtls_psk.psk_info.hint.s         = (const uint8_t*)hint;
+  dtls_psk.psk_info.hint.s         = (const uint8_t *)hint;
   dtls_psk.psk_info.hint.length    = hint ? strlen(hint) : 0;
   dtls_psk.psk_info.key.s          = key;
   dtls_psk.psk_info.key.length     = key_len;
@@ -1125,7 +1284,7 @@ setup_server_context_psk (const char *hint,
 
   coap_address_init(&listen_addr);
   listen_addr.addr.sa.sa_family = AF_INET;
-  listen_addr.addr.sin.sin_port = htons (5684);
+  listen_addr.addr.sin.sin_port = htons(5684);
 
   endpoint = coap_new_endpoint(context, &listen_addr, COAP_PROTO_DTLS);
   if (!endpoint) {
@@ -1153,8 +1312,7 @@ setup_server_context_psk (const char *hint,
 static const coap_dtls_cpsk_info_t *
 verify_ih_callback(coap_str_const_t *hint,
                    coap_session_t *c_session,
-                   void *arg
-) {
+                   void *arg) {
   coap_dtls_cpsk_info_t *psk_info = (coap_dtls_cpsk_info_t *)arg;
   /* Remove (void) definition if variable is used */
   (void)c_session;
@@ -1169,13 +1327,12 @@ static coap_dtls_cpsk_t dtls_psk;
 static char client_sni[256];
 
 static coap_session_t *
-setup_client_session_psk (const char *uri,
-                          struct in_addr ip_address,
-                          const uint8_t *identity,
-                          unsigned int identity_len,
-                          const uint8_t *key,
-                          unsigned int key_len
-) {
+setup_client_session_psk(const char *host,
+                         struct in_addr ip_address,
+                         const uint8_t *identity,
+                         unsigned int identity_len,
+                         const uint8_t *key,
+                         unsigned int key_len) {
   coap_session_t *session;
   coap_address_t server;
   /* See coap_context(3) */
@@ -1191,24 +1348,21 @@ setup_client_session_psk (const char *uri,
   coap_address_init(&server);
   server.addr.sa.sa_family = AF_INET;
   server.addr.sin.sin_addr = ip_address;
-  server.addr.sin.sin_port = htons (5684);
+  server.addr.sin.sin_port = htons(5684);
 
   /* See coap_encryption(3) */
-  memset (&dtls_psk, 0, sizeof(dtls_psk));
+  memset(&dtls_psk, 0, sizeof(dtls_psk));
   dtls_psk.version = COAP_DTLS_CPSK_SETUP_VERSION;
   dtls_psk.validate_ih_call_back = verify_ih_callback;
   dtls_psk.ih_call_back_arg = &dtls_psk.psk_info;
-  if (uri)
-    memcpy(client_sni, uri, min(strlen(uri), sizeof(client_sni)-1));
-  else
-    memcpy(client_sni, "localhost", 9);
+  snprintf(client_sni, sizeof(client_sni), "%s", host);
   dtls_psk.client_sni = client_sni;
   dtls_psk.psk_info.identity.s = identity;
   dtls_psk.psk_info.identity.length = identity_len;
   dtls_psk.psk_info.key.s = key;
   dtls_psk.psk_info.key.length = key_len;
   session = coap_new_client_session_psk2(context, NULL, &server,
-                                        COAP_PROTO_DTLS, &dtls_psk);
+                                         COAP_PROTO_DTLS, &dtls_psk);
   if (!session) {
     coap_free_context(context);
     return NULL;
@@ -1233,9 +1387,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

@@ -1,7 +1,7 @@
 /*
  * coap_resource_internal.h -- generic resource handling
  *
- * Copyright (C) 2010,2011,2014-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010,2011,2014-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -112,6 +112,33 @@ struct coap_resource_t {
 };
 
 /**
+ * Registers the given @p resource for @p context. The resource must have been
+ * created by coap_resource_init() or coap_resource_unknown_init(), the
+ * storage allocated for the resource will be released by coap_delete_resource_lkd().
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param context  The context to use.
+ * @param resource The resource to store.
+ */
+void coap_add_resource_lkd(coap_context_t *context, coap_resource_t *resource);
+
+/**
+ * Deletes a resource identified by @p resource. The storage allocated for that
+ * resource is freed, and removed from the context.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param context  This parameter is ignored, but kept for backward
+ *                 compatibility.
+ * @param resource The resource to delete.
+ *
+ * @return         @c 1 if the resource was found (and destroyed),
+ *                 @c 0 otherwise.
+ */
+int coap_delete_resource_lkd(coap_context_t *context, coap_resource_t *resource);
+
+/**
  * Deletes all resources from given @p context and frees their storage.
  *
  * @param context The CoAP context with the resources to be deleted.
@@ -133,6 +160,20 @@ void coap_delete_all_resources(coap_context_t *context);
   }
 
 /**
+ * Returns the resource identified by the unique string @p uri_path. If no
+ * resource was found, this function returns @c NULL.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param context  The context to look for this resource.
+ * @param uri_path  The unique string uri of the resource.
+ *
+ * @return         A pointer to the resource or @c NULL if not found.
+ */
+coap_resource_t *coap_get_resource_from_uri_path_lkd(coap_context_t *context,
+                                                     coap_str_const_t *uri_path);
+
+/**
  * Deletes an attribute.
  * Note: This is for internal use only, as it is not deleted from its chain.
  *
@@ -141,10 +182,35 @@ void coap_delete_all_resources(coap_context_t *context);
  */
 void coap_delete_attr(coap_attr_t *attr);
 
-coap_print_status_t coap_print_wellknown(coap_context_t *,
-                                         unsigned char *,
-                                         size_t *, size_t,
-                                         const coap_string_t *);
+/**
+ * Prints the names of all known resources for @p context to @p buf. This function
+ * sets @p buflen to the number of bytes actually written and returns
+ * @c COAP_PRINT_STATUS_ERROR on error. On error, the value in @p buflen is undefined.
+ * Otherwise, the lower 28 bits are set to the number of bytes that have actually
+ * been written. COAP_PRINT_STATUS_TRUNC is set when the output has been truncated.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param context The context with the resource map.
+ * @param buf     The buffer to write the result.
+ * @param buflen  Must be initialized to the maximum length of @p buf and will be
+ *                set to the length of the well-known response on return.
+ * @param offset  The offset in bytes where the output shall start and is
+ *                shifted accordingly with the characters that have been
+ *                processed. This parameter is used to support the block
+ *                option.
+ * @param query_filter A filter query according to <a href="http://tools.ietf.org/html/draft-ietf-core-link-format-11#section-4.1">Link Format</a>
+ *
+ * @return COAP_PRINT_STATUS_ERROR on error. Otherwise, the lower 28 bits are
+ *         set to the number of bytes that have actually been written to
+ *         @p buf. COAP_PRINT_STATUS_TRUNC is set when the output has been
+ *         truncated.
+ */
+coap_print_status_t coap_print_wellknown_lkd(coap_context_t *context,
+                                             unsigned char *buf,
+                                             size_t *buflen,
+                                             size_t offset,
+                                             const coap_string_t *query_filter);
 
 /** @} */
 

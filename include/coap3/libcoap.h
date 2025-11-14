@@ -38,10 +38,10 @@ typedef USHORT in_port_t;
 #define        _IN_PORT_T_DECLARED
 #endif
 #endif /* !defined(__MINGW32__) */
-#elif !defined (CONTIKI) && !defined (WITH_LWIP)
+#elif !defined (CONTIKI) && !defined (WITH_LWIP) && !defined (RIOT_VERSION)
 #include <netinet/in.h>
 #include <sys/socket.h>
-#endif /* ! CONTIKI && ! WITH_LWIP */
+#endif /* ! CONTIKI && ! WITH_LWIP && ! RIOT_VERSION */
 
 #ifndef COAP_STATIC_INLINE
 #  if defined(__cplusplus)
@@ -54,6 +54,7 @@ typedef USHORT in_port_t;
 #    endif
 #  endif
 #endif
+
 #ifndef COAP_DEPRECATED
 #  if defined(_MSC_VER)
 #    define COAP_DEPRECATED __declspec(deprecated)
@@ -61,6 +62,7 @@ typedef USHORT in_port_t;
 #    define COAP_DEPRECATED __attribute__ ((deprecated))
 #  endif
 #endif
+
 #ifndef COAP_UNUSED
 #  ifdef __GNUC__
 #    define COAP_UNUSED __attribute__((unused))
@@ -68,6 +70,10 @@ typedef USHORT in_port_t;
 #    define COAP_UNUSED
 #  endif /* __GNUC__ */
 #endif /* COAP_UNUSED */
+
+#ifndef COAP_API
+#define COAP_API
+#endif
 
 void coap_startup(void);
 

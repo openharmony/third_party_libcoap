@@ -4,8 +4,8 @@
  * coap_oscore_internal.h - Object Security for Constrained RESTful Environments
  *                          (OSCORE) support for libcoap
  *
- * Copyright (C) 2019-2023 Olaf Bergmann <bergmann@tzi.org>
- * Copyright (C) 2021-2023 Jon Shallow <supjps-libcoap:jpshallow.com>
+ * Copyright (C) 2019-2024 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2021-2024 Jon Shallow <supjps-libcoap:jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -80,10 +80,32 @@ typedef enum oscore_partial_iv_t {
  *
  * @return The OSCORE encrypted version of @p pdu, or @c NULL on error.
  */
-coap_pdu_t *coap_oscore_new_pdu_encrypted(coap_session_t *session,
-                                          coap_pdu_t *pdu,
-                                          coap_bin_const_t *kid_context,
-                                          oscore_partial_iv_t send_partial_iv);
+COAP_API coap_pdu_t *coap_oscore_new_pdu_encrypted(coap_session_t *session,
+                                                   coap_pdu_t *pdu,
+                                                   coap_bin_const_t *kid_context,
+                                                   oscore_partial_iv_t send_partial_iv);
+
+/**
+ * Encrypts the specified @p pdu when OSCORE encryption is required
+ * on @p session. This function returns the encrypted PDU or @c NULL
+ * on error.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param session The session that will handle the transport of the
+ *                specified @p pdu.
+ * @param pdu     The PDU to encrypt if necessary.
+ * @param kid_context Optional kid context to use or NULL.
+ * @param send_partial_iv @c OSCORE_SEND_PARTIAL_IV if partial_iv is always to
+ *                        be added, else @c OSCORE_SEND_NO_IV if not to be
+ *                        added for a response if not required.
+ *
+ * @return The OSCORE encrypted version of @p pdu, or @c NULL on error.
+ */
+coap_pdu_t *coap_oscore_new_pdu_encrypted_lkd(coap_session_t *session,
+                                              coap_pdu_t *pdu,
+                                              coap_bin_const_t *kid_context,
+                                              oscore_partial_iv_t send_partial_iv);
 
 /**
  * Decrypts the OSCORE-encrypted parts of @p pdu when OSCORE is used.
@@ -141,6 +163,133 @@ int coap_rebuild_pdu_for_proxy(coap_pdu_t *pdu);
  */
 int coap_oscore_initiate(coap_session_t *session,
                          coap_oscore_conf_t *oscore_conf);
+/**
+ * Set the context's default OSCORE configuration for a server.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param context     The current coap_context_t object.
+ * @param oscore_conf OSCORE configuration information. This structure is
+ *                    freed off by this call.
+ *
+ * @return @c 1 if successful, else @c 0.
+ */
+int coap_context_oscore_server_lkd(coap_context_t *context,
+                                   coap_oscore_conf_t *oscore_conf);
+
+/**
+ * Release all the information associated for the specific Recipient ID
+ * (and hence and stop any further OSCORE protection for this Recipient).
+ * Note: This is only removed from the OSCORE context as first defined by
+ * coap_new_client_session_oscore*_lkd() or coap_context_oscore_server().
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param context The CoAP  context holding the OSCORE recipient_id to.
+ * @param recipient_id The Recipient ID to remove.
+ *
+ * @return @c 1 Successfully removed, else @c 0 not found.
+ */
+int coap_delete_oscore_recipient_lkd(coap_context_t *context,
+                                     coap_bin_const_t *recipient_id);
+
+/**
+ * Creates a new client session to the designated server, protecting the data
+ * using OSCORE.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param ctx The CoAP context.
+ * @param local_if Address of local interface. It is recommended to use NULL
+ *                 to let the operating system choose a suitable local
+ *                 interface. If an address is specified, the port number
+ *                 should be zero, which means that a free port is
+ *                 automatically selected.
+ * @param server The server's address. If the port number is zero, the default
+ *               port for the protocol will be used.
+ * @param proto  CoAP Protocol.
+ * @param oscore_conf OSCORE configuration information. This structure is
+ *                    freed off by this call.
+ *
+ * @return A new CoAP session or NULL if failed. Call coap_session_release_lkd()
+ *         to free.
+ */
+coap_session_t *coap_new_client_session_oscore_lkd(coap_context_t *ctx,
+                                                   const coap_address_t *local_if,
+                                                   const coap_address_t *server,
+                                                   coap_proto_t proto,
+                                                   coap_oscore_conf_t *oscore_conf);
+
+/**
+ * Creates a new client session to the designated server with PKI credentials
+ * as well as protecting the data using OSCORE.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param ctx The CoAP context.
+ * @param local_if Address of local interface. It is recommended to use NULL to
+ *                 let the operating system choose a suitable local interface.
+ *                 If an address is specified, the port number should be zero,
+ *                 which means that a free port is automatically selected.
+ * @param server The server's address. If the port number is zero, the default
+ *               port for the protocol will be used.
+ * @param proto CoAP Protocol.
+ * @param pki_data PKI parameters.
+ * @param oscore_conf OSCORE configuration information. This structure is
+ *                    freed off by this call.
+ *
+ * @return A new CoAP session or NULL if failed. Call coap_session_release_lkd()
+ *         to free.
+ */
+coap_session_t *coap_new_client_session_oscore_pki_lkd(coap_context_t *ctx,
+                                                       const coap_address_t *local_if,
+                                                       const coap_address_t *server,
+                                                       coap_proto_t proto,
+                                                       coap_dtls_pki_t *pki_data,
+                                                       coap_oscore_conf_t *oscore_conf);
+
+/**
+ * Creates a new client session to the designated server with PSK credentials
+ * as well as protecting the data using OSCORE.
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param ctx The CoAP context.
+ * @param local_if Address of local interface. It is recommended to use NULL to
+ *                 let the operating system choose a suitable local interface.
+ *                 If an address is specified, the port number should be zero,
+ *                 which means that a free port is automatically selected.
+ * @param server The server's address. If the port number is zero, the default
+ *               port for the protocol will be used.
+ * @param proto CoAP Protocol.
+ * @param psk_data PSK parameters.
+ * @param oscore_conf OSCORE configuration information. This structure is
+ *                    freed off by this call.
+ *
+ * @return A new CoAP session or NULL if failed. Call coap_session_release_lkd()
+ *         to free.
+ */
+coap_session_t *coap_new_client_session_oscore_psk_lkd(coap_context_t *ctx,
+                                                       const coap_address_t *local_if,
+                                                       const coap_address_t *server,
+                                                       coap_proto_t proto,
+                                                       coap_dtls_cpsk_t *psk_data,
+                                                       coap_oscore_conf_t *oscore_conf);
+
+/**
+ * Add in the specific Recipient ID into the OSCORE context (server only).
+ * Note: This is only added to the OSCORE context as first defined by
+ * coap_new_client_session_oscore*() or coap_context_oscore_server().
+ *
+ * Note: This function must be called in the locked state.
+ *
+ * @param context The CoAP  context to add the OSCORE recipient_id to.
+ * @param recipient_id The Recipient ID to add.
+ *
+ * @return @c 1 Successfully added, else @c 0 there is an issue.
+ */
+int coap_new_oscore_recipient_lkd(coap_context_t *context,
+                                  coap_bin_const_t *recipient_id);
 
 /** @} */
 

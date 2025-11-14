@@ -1,8 +1,9 @@
 /*
  * coap_dtls.h -- (Datagram) Transport Layer Support for libcoap
  *
- * Copyright (C) 2016 Olaf Bergmann <bergmann@tzi.org>
- * Copyright (C) 2017 Jean-Claude Michelou <jcm@spinetix.com>
+ * Copyright (C) 2016      Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2017      Jean-Claude Michelou <jcm@spinetix.com>
+ * Copyright (C) 2023-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -48,46 +49,23 @@ typedef enum coap_dtls_role_t {
 #define COAP_DTLS_RPK_CERT_CN "RPK"
 
 /**
- * Check whether DTLS is available.
+ * Configure an ENGINE for a TLS library.
+ * (Currently only OpenSSL is supported)
  *
- * @return @c 1 if support for DTLS is available, or @c 0 otherwise.
+ * @param conf_mem The configuration to use in memory.
+ *
+ * @return @c 1 if successful, or @c 0 if failure.
  */
-int coap_dtls_is_supported(void);
+int coap_tls_engine_configure(coap_str_const_t *conf_mem);
 
 /**
- * Check whether TLS is available.
+ * Remove a previously configured ENGINE from a TLS library.
+ * (Currently only OpenSSL is supported)
+ * (This is automatically done when coap_free_context() is called)
  *
- * @return @c 1 if support for TLS is available, or @c 0 otherwise.
+ * @return @c 1 if successful, or @c 0 if failure.
  */
-int coap_tls_is_supported(void);
-
-/**
- * Check whether (D)TLS PSK is available.
- *
- * @return @c 1 if support for (D)TLS PSK is available, or @c 0 otherwise.
- */
-int coap_dtls_psk_is_supported(void);
-
-/**
- * Check whether (D)TLS PKI is available.
- *
- * @return @c 1 if support for (D)TLS PKI is available, or @c 0 otherwise.
- */
-int coap_dtls_pki_is_supported(void);
-
-/**
- * Check whether (D)TLS PKCS11 is available.
- *
- * @return @c 1 if support for (D)TLS PKCS11 is available, or @c 0 otherwise.
- */
-int coap_dtls_pkcs11_is_supported(void);
-
-/**
- * Check whether (D)TLS RPK is available.
- *
- * @return @c 1 if support for (D)TLS RPK is available, or @c 0 otherwise.
- */
-int coap_dtls_rpk_is_supported(void);
+int coap_tls_engine_remove(void);
 
 typedef enum coap_tls_library_t {
   COAP_TLS_LIBRARY_NOTLS = 0, /**< No DTLS library */
@@ -95,6 +73,7 @@ typedef enum coap_tls_library_t {
   COAP_TLS_LIBRARY_OPENSSL,   /**< Using OpenSSL library */
   COAP_TLS_LIBRARY_GNUTLS,    /**< Using GnuTLS library */
   COAP_TLS_LIBRARY_MBEDTLS,   /**< Using Mbed TLS library */
+  COAP_TLS_LIBRARY_WOLFSSL,   /**< Using wolfSSL library */
 } coap_tls_library_t;
 
 /**
@@ -190,13 +169,15 @@ typedef enum coap_pki_key_t {
   COAP_PKI_KEY_ASN1,           /**< The PKI key type is ASN.1 (DER) buffer */
   COAP_PKI_KEY_PEM_BUF,        /**< The PKI key type is PEM buffer */
   COAP_PKI_KEY_PKCS11,         /**< The PKI key type is PKCS11 (DER) */
+  COAP_PKI_KEY_DEFINE,         /**< The individual PKI key types are Definable */
 } coap_pki_key_t;
 
 /**
  * The structure that holds the PKI PEM definitions.
  */
 typedef struct coap_pki_key_pem_t {
-  const char *ca_file;       /**< File location of Common CA in PEM format */
+  const char *ca_file;       /**< File location of Common CA (and any
+                                 intermediates) in PEM format */
   const char *public_cert;   /**< File location of Public Cert */
   const char *private_key;   /**< File location of Private Key in PEM format */
 } coap_pki_key_pem_t;
@@ -247,6 +228,52 @@ typedef struct coap_pki_key_pkcs11_t {
 } coap_pki_key_pkcs11_t;
 
 /**
+ * The enum to define the format of the key parameter definition.
+ */
+typedef enum {
+  COAP_PKI_KEY_DEF_PEM = 0, /**< The PKI key type is PEM file.
+                                 Length ignored, NULL terminated. */
+  COAP_PKI_KEY_DEF_PEM_BUF, /**< The PKI key type is PEM buffer.
+                                 Length required. */
+  COAP_PKI_KEY_DEF_RPK_BUF, /**< The PKI key type is RPK in buffer.
+                                 Length required. */
+  COAP_PKI_KEY_DEF_DER,     /**< The PKI key type is DER file.
+                                 Length ignored, NULL terminated. */
+  COAP_PKI_KEY_DEF_DER_BUF, /**< The PKI key type is DER buffer (ASN.1).
+                                 Length required.
+                                 Private Key Type required. */
+  COAP_PKI_KEY_DEF_PKCS11,  /**< The PKI key type is PKCS11 (pkcs11:...).
+                                 Length ignored, NULL terminated.
+                                 User Pin optional. */
+  COAP_PKI_KEY_DEF_PKCS11_RPK, /**< The PKI key type is PKCS11 w/ RPK (pkcs11:...).
+                                 Length ignored, NULL terminated.
+                                 User Pin optional. */
+  COAP_PKI_KEY_DEF_ENGINE,  /**< The PKI key type is to be passed to ENGINE.
+                                 Length ignored, NULL terminated.
+                                 Supported by OpenSSL only */
+} coap_pki_define_t;
+
+/**
+ * The structure that holds the PKI Definable key type definitions.
+ */
+typedef struct coap_pki_key_define_t {
+  coap_const_char_ptr_t ca;          /**< define: Common CA Certificate */
+  coap_const_char_ptr_t public_cert; /**< define: Public Cert */
+  coap_const_char_ptr_t private_key; /**< define: Private Key */
+  size_t ca_len;             /**< define CA Cert length (if needed)*/
+  size_t public_cert_len;    /**< define Public Cert length (if needed)*/
+  size_t private_key_len;    /**< define Private Key length (if needed)*/
+  coap_pki_define_t ca_def;  /**< define: Common CA type definition*/
+  coap_pki_define_t public_cert_def; /**< define: Public Cert type definition*/
+  coap_pki_define_t private_key_def; /**< define: Private Key type definition*/
+  coap_asn1_privatekey_type_t private_key_type; /**< define: ASN1 Private Key
+                                                     Type (if needed) */
+  const char *user_pin;      /**< define: User pin to access type PKCS11.
+                                  If PKCS11 and NULL, then pin-value= parameter
+                                  must be set in pkcs11: URI as a query. */
+} coap_pki_key_define_t;
+
+/**
  * The structure that holds the PKI key information.
  */
 typedef struct coap_dtls_key_t {
@@ -256,6 +283,7 @@ typedef struct coap_dtls_key_t {
     coap_pki_key_pem_buf_t pem_buf;  /**< for PEM memory keys */
     coap_pki_key_asn1_t asn1;        /**< for ASN.1 (DER) memory keys */
     coap_pki_key_pkcs11_t pkcs11;    /**< for PKCS11 keys */
+    coap_pki_key_define_t define;    /**< for definable type keys */
   } key;
 } coap_dtls_key_t;
 
@@ -302,9 +330,12 @@ struct coap_dtls_pki_t {
   uint8_t is_rpk_not_cert;        /**< 1 is RPK instead of Public Certificate.
                                    *     If set, PKI key format type cannot be
                                    *     COAP_PKI_KEY_PEM */
-  uint8_t reserved[3];             /**< Reserved - must be set to 0 for
+  uint8_t use_cid;                 /**< 1 if DTLS Connection ID is to be
+                                    *     used (Client only, server always enabled)
+                                    *     if supported */
+  uint8_t reserved[2];             /**< Reserved - must be set to 0 for
                                         future compatibility */
-  /* Size of 3 chosen to align to next
+  /* Size of 2 chosen to align to next
    * parameter, so if newly defined option
    * it can use one of the reserved slots so
    * no need to change
@@ -336,7 +367,8 @@ struct coap_dtls_pki_t {
 
   char *client_sni;    /**<  If not NULL, SNI to use in client TLS setup.
                              Owned by the client app and must remain valid
-                             during the call to coap_new_client_session_pki() */
+                             during the call to coap_new_client_session_pki().
+                             Note: Ignored if literal IPv4 or IPv6 address. */
 
   coap_dtls_key_t pki_key;  /**< PKI key definition */
 };
@@ -380,9 +412,12 @@ typedef struct coap_dtls_cpsk_t {
                        to support this version of the struct */
 
   /* Options to enable different TLS functionality in libcoap */
-  uint8_t reserved[7];             /**< Reserved - must be set to 0 for
-                                        future compatibility */
-  /* Size of 7 chosen to align to next
+  uint8_t ec_jpake;        /**< Set to 1 if EC-JPAKE is to be used.
+                                Currently Mbed TLS only */
+  uint8_t use_cid;         /**< Set to 1 if DTLS Connection ID is to be used */
+  uint8_t reserved[5];     /**< Reserved - must be set to 0 for
+                                future compatibility */
+  /* Size of 5 chosen to align to next
    * parameter, so if newly defined option
    * it can use one of the reserverd slot so
    * no need to change
@@ -399,10 +434,11 @@ typedef struct coap_dtls_cpsk_t {
   void *ih_call_back_arg;  /**< Passed in to the Identity Hint callback
                                 function */
 
-  char *client_sni;    /**< If not NULL, SNI to use in client TLS setup.
-                            Owned by the client app and must remain valid
-                            during the call to coap_new_client_session_psk2()
-                            Note: Not supported by TinyDTLS. */
+  char *client_sni; /**< If not NULL, SNI to use in client TLS setup.
+                         Owned by the client app and must remain valid
+                         during the call to coap_new_client_session_psk2().
+                         Note: Ignored if literal IPv4 or IPv6 address.
+                         Note: Not supported by TinyDTLS. */
 
   coap_dtls_cpsk_info_t psk_info;  /**< Client PSK definition */
 } coap_dtls_cpsk_t;
@@ -467,9 +503,11 @@ typedef struct coap_dtls_spsk_t {
                        to support this version of the struct */
 
   /* Options to enable different TLS functionality in libcoap */
-  uint8_t reserved[7];             /**< Reserved - must be set to 0 for
-                                        future compatibility */
-  /* Size of 7 chosen to align to next
+  uint8_t ec_jpake;        /**< Set to 1 if EC-JPAKE can be used.
+                                Currently Mbed TLS only */
+  uint8_t reserved[6];     /**< Reserved - must be set to 0 for
+                                future compatibility */
+  /* Size of 6 chosen to align to next
    * parameter, so if newly defined option
    * it can use one of the reserverd slot so
    * no need to change
@@ -494,7 +532,6 @@ typedef struct coap_dtls_spsk_t {
 
   coap_dtls_spsk_info_t psk_info;  /**< Server PSK definition */
 } coap_dtls_spsk_t;
-
 
 /** @} */
 

@@ -2,7 +2,7 @@
  * coap_internal.h -- Structures, Enums & Functions that are not exposed to
  * application programming
  *
- * Copyright (C) 2019-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2019-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -120,10 +120,14 @@ typedef struct oscore_ctx_t oscore_ctx_t;
 #include "coap_oscore_internal.h"
 #endif /* COAP_OSCORE_SUPPORT */
 #include "coap_pdu_internal.h"
+#include "coap_prng_internal.h"
+#include "coap_proxy_internal.h"
 #include "coap_resource_internal.h"
 #include "coap_session_internal.h"
+#include "coap_sha1_internal.h"
 #include "coap_subscribe_internal.h"
 #include "coap_tcp_internal.h"
+#include "coap_threadsafe_internal.h"
 #include "coap_uri_internal.h"
 #include "coap_utlist_internal.h"
 #include "coap_uthash_internal.h"

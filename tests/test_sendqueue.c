@@ -1,6 +1,6 @@
 /* libcoap unit tests
  *
- * Copyright (C) 2013,2015,2022-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2013,2015,2022-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -14,6 +14,11 @@
 #include <stdio.h>
 
 #if COAP_CLIENT_SUPPORT
+
+#define ReturnIf_CU_ASSERT_PTR_NOT_NULL(value) \
+  CU_ASSERT_PTR_NOT_NULL(value); \
+  if ((void*)value == NULL) return;
+
 static coap_context_t *ctx; /* Holds the coap context for most tests */
 static coap_session_t *session; /* Holds a reference-counted session object */
 
@@ -44,7 +49,7 @@ t_sendqueue1(void) {
   int result = coap_insert_node(&ctx->sendqueue, node[1]);
 
   CU_ASSERT(result > 0);
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue, node[1]);
   CU_ASSERT(node[1]->t == timestamp[1]);
 }
@@ -74,8 +79,8 @@ t_sendqueue3(void) {
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue, node[3]);
   CU_ASSERT(node[3]->t == timestamp[3]);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next);
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next->next);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next->next);
 
   CU_ASSERT(ctx->sendqueue->next->t == timestamp[1] - timestamp[3]);
   CU_ASSERT(ctx->sendqueue->next->next->t == timestamp[2] - timestamp[1]);
@@ -92,13 +97,13 @@ t_sendqueue4(void) {
 
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue, node[3]);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next);
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue->next, node[1]);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next->next);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next->next);
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue->next->next, node[4]);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next->next->next);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next->next->next);
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue->next->next->next, node[2]);
 
   CU_ASSERT(ctx->sendqueue->next->t == timestamp[1] - timestamp[3]);
@@ -132,7 +137,7 @@ t_sendqueue5(void) {
   result = coap_adjust_basetime(ctx, now);
 
   CU_ASSERT(result == 0);
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
   CU_ASSERT(ctx->sendqueue_basetime == now);
   CU_ASSERT(ctx->sendqueue->t == timestamp[3] + delta1);
 
@@ -140,13 +145,13 @@ t_sendqueue5(void) {
   result = coap_adjust_basetime(ctx, now);
   CU_ASSERT(result == 2);
   CU_ASSERT(ctx->sendqueue_basetime == now);
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
   CU_ASSERT(ctx->sendqueue->t == 0);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next);
   CU_ASSERT(ctx->sendqueue->next->t == 0);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next->next);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next->next);
   CU_ASSERT(ctx->sendqueue->next->next->t == delta2 - delta1 - timestamp[1]);
 
   /* restore timestamps of nodes in the sendqueue */
@@ -191,19 +196,19 @@ t_sendqueue7(void) {
   int result;
   coap_queue_t *tmp_node;
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue, node[3]);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next);
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue->next, node[1]);
 
   result = coap_remove_from_queue(&ctx->sendqueue, session, 3, &tmp_node);
 
   CU_ASSERT(result == 1);
-  CU_ASSERT_PTR_NOT_NULL(tmp_node);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(tmp_node);
   CU_ASSERT_PTR_EQUAL(tmp_node, node[3]);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue, node[1]);
 
   CU_ASSERT(ctx->sendqueue->t == timestamp[1]);
@@ -217,14 +222,14 @@ t_sendqueue8(void) {
   result = coap_remove_from_queue(&ctx->sendqueue, session, 4, &tmp_node);
 
   CU_ASSERT(result == 1);
-  CU_ASSERT_PTR_NOT_NULL(tmp_node);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(tmp_node);
   CU_ASSERT_PTR_EQUAL(tmp_node, node[4]);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue, node[1]);
   CU_ASSERT(ctx->sendqueue->t == timestamp[1]);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue->next);
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue->next, node[2]);
   CU_ASSERT(ctx->sendqueue->next->t == timestamp[2] - timestamp[1]);
 
@@ -236,16 +241,16 @@ t_sendqueue9(void) {
   coap_queue_t *tmp_node;
   tmp_node = coap_peek_next(ctx);
 
-  CU_ASSERT_PTR_NOT_NULL(tmp_node);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(tmp_node);
   CU_ASSERT_PTR_EQUAL(tmp_node, node[1]);
   CU_ASSERT_PTR_EQUAL(tmp_node, ctx->sendqueue);
 
   tmp_node = coap_pop_next(ctx);
 
-  CU_ASSERT_PTR_NOT_NULL(tmp_node);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(tmp_node);
   CU_ASSERT_PTR_EQUAL(tmp_node, node[1]);
 
-  CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(ctx->sendqueue);
   CU_ASSERT_PTR_EQUAL(ctx->sendqueue, node[2]);
 
   CU_ASSERT(tmp_node->t == timestamp[1]);
@@ -254,13 +259,15 @@ t_sendqueue9(void) {
   CU_ASSERT_PTR_NULL(ctx->sendqueue->next);
 }
 
+static int t_sendqueue_tests_remove(void);
+
 static void
 t_sendqueue10(void) {
   coap_queue_t *tmp_node;
 
   tmp_node = coap_pop_next(ctx);
 
-  CU_ASSERT_PTR_NOT_NULL(tmp_node);
+  ReturnIf_CU_ASSERT_PTR_NOT_NULL(tmp_node);
   CU_ASSERT_PTR_EQUAL(tmp_node, node[2]);
 
   CU_ASSERT_PTR_NULL(ctx->sendqueue);
@@ -304,15 +311,7 @@ t_sendqueue_tests_create(void) {
   }
 
   if (error) {
-    /* destroy all test nodes and set entry to zero */
-    for (n = 0; n < sizeof(node)/sizeof(coap_queue_t *); n++) {
-      if (node[n]) {
-        coap_delete_node(node[n]);
-        node[n] = NULL;
-      }
-    }
-    coap_free_context(ctx);
-    ctx = NULL;
+    t_sendqueue_tests_remove();
   }
 
   return error;
@@ -328,6 +327,7 @@ t_sendqueue_tests_remove(void) {
     }
   }
   coap_free_context(ctx);
+  ctx = NULL;
   return 0;
 }
 

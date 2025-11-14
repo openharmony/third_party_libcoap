@@ -76,7 +76,8 @@ const coap_session_t *_session_);*
 
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -126,9 +127,12 @@ get dropped.
 *Function: coap_session_set_type_client()*
 
 The *coap_session_set_type_client*() function is used to convert the _session_
-frrm a session endpoint type of Server to Client.  This typically is used in a
+from a session endpoint type of Server to Client.  This typically is used in a
 Call-Home type environment where the roles have to change following the
-establishment of a session.  The reference count is incremented by 1.
+establishment of a session.  The reference count is incremented by 1 so that
+the now type Client _session_ does not expire until a *coap_session_release*()
+is done. *NOTE:* This function will fail for a DTLS server type session if done
+before the ClientHello is seen.
 
 *Function: coap_session_set_app_data()*
 
@@ -199,6 +203,7 @@ of the _session_.
 OpenSSL:  SSL*
 GnuTLS:   gnutls_session_t (implicit *)
 Mbed TLS: mbedtls_ssl_context*
+wolfSSL:  WOLFSSL*
 TinyDTLS: struct dtls_context*
 ----
 
@@ -273,9 +278,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

@@ -16,13 +16,16 @@ coap_resource_unknown_init,
 coap_resource_unknown_init2,
 coap_resource_proxy_uri_init,
 coap_resource_proxy_uri_init2,
+coap_resource_reverse_proxy_init,
 coap_add_resource,
 coap_delete_resource,
 coap_resource_set_mode,
 coap_resource_set_userdata,
 coap_resource_get_userdata,
 coap_resource_release_userdata_handler,
-coap_resource_get_uri_path
+coap_resource_get_uri_path,
+coap_get_resource_from_uri_path,
+coap_print_wellknown
 - Work with CoAP resources
 
 SYNOPSIS
@@ -45,6 +48,9 @@ _proxy_handler_, size_t _host_name_count_, const char *_host_name_list_[]);*
 _proxy_handler_, size_t _host_name_count_, const char *_host_name_list_[],
 int _flags_);*
 
+*coap_resource_t *coap_resource_reverse_proxy_init(coap_method_handler_t
+_rev_proxy_handler_, int _flags_);*
+
 *void coap_add_resource(coap_context_t *_context_,
 coap_resource_t *_resource_);*
 
@@ -62,9 +68,17 @@ coap_resource_release_userdata_handler_t _callback_);*
 
 *coap_str_const_t *coap_resource_get_uri_path(coap_resource_t *_resource_);*
 
+*coap_resource_t *coap_get_resource_from_uri_path(coap_context_t *_context_,
+coap_str_const_t *_uri_path_);*
+
+*coap_print_status_t coap_print_wellknown(coap_context_t *context,
+unsigned char *buf, size_t *buflen, size_t offset,
+const coap_string_t *query_filter);*
+
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -145,13 +159,22 @@ to the request handler.
 *COAP_RESOURCE_FLAGS_OSCORE_ONLY*::
 Define this resource as an OSCORE enabled access only.
 
+*COAP_RESOURCE_HANDLE_WELLKNOWN_CORE*::
+Define this when invoking *coap_resource_unknown_init2*() if .well-known/core
+is to be passed to the unknown URI handler rather than processed locally.
+Used for easily passing on a request as a reverse-proxy request.
+
 *NOTE:* The following flags are only tested against if
 *coap_mcast_per_resource*() has been called.  If *coap_mcast_per_resource*()
 has not been called, then all resources have multicast support, libcoap adds
 in random delays to the responses, and 4.xx / 5.xx responses are dropped.
 
 *NOTE:* The pseudo resource for ".well-known/core" always has multicast
-support enabled and is not configurable.
+support enabled and is not configurable. It is possible for a server to
+create a resource for ".well-known/core" that can then control the
+multicast support and the provided GET request handler can call
+*coap_print_wellknown*() to produce the same information as the pseudo
+resource.
 
 [horizontal]
 *COAP_RESOURCE_FLAGS_HAS_MCAST_SUPPORT*::
@@ -163,7 +186,7 @@ sending the response back to the client.  It is then the responsibility of
 the app to delay the responses for multicast requests. See
 "https://rfc-editor.org/rfc/rfc7252#section-8.2[RFC7252 8.2. Request/Response
 Layer]".
- However, the pseudo resource for ".well-known/core" always has multicast
+However, the pseudo resource for ".well-known/core" always has multicast
 support enabled.
 
 *COAP_RESOURCE_FLAGS_LIB_ENA_MCAST_SUPPRESS_2_05*::
@@ -205,6 +228,9 @@ _resource_ to handle PUT requests to resources that are unknown. Additional
 handlers can be added to this resource if required. _flags_ can be zero or
 more of the COAP_RESOURCE_FLAGS MCAST definitions.
 
+*NOTE:* There can only be one reverse-proxy or unknown resource handler per
+context - attaching a new one overrides the previous definition.
+
 *Function: coap_resource_proxy_uri_init()*
 
 The *coap_resource_proxy_uri_init*() function returns a newly created
@@ -228,6 +254,20 @@ supplied in the array defined by _host_name_list_[] which has a count of
 _host_name_count_.  This is used to check whether the current endpoint is
 the proxy target address, or the request has to be passed on to an upstream
 server. _flags_ can be zero or more COAP_RESOURCE_FLAGS MCAST definitions.
+
+*NOTE:* There can only be one proxy resource handler per
+context - attaching a new one overrides the previous definition.
+
+*Function: coap_resource_reverse_proxy_init()*
+
+The *coap_resource_reverse_proxy_init*() function returns a newly created
+_resource_ of type _coap_resource_t_ *. _rev_proxy_handler_ is automatically added
+to the _resource_ to handle all the PUT/POST/GET etc. requests including
+.well-known/core. There is no need to add explicit request type handlers.
+_flags_ can be zero or more COAP_RESOURCE_FLAGS MCAST definitions.
+
+*NOTE:* There can only be one reverse-proxy or unknown resource handler per
+context - attaching a new one overrides the previous definition.
 
 *Function: coap_add_resource()*
 
@@ -282,12 +322,27 @@ needs to be freed off.
 The *coap_resource_get_uri_path*() function is used to obtain the UriPath of
 the _resource_ definion.
 
+*Function: coap_get_resource_from_uri_path()*
+
+The *coap_get_resource_from_uri_path*() function is used to return the resource
+identified by the unique string _uri_path_ associated with _context_.
+
+*Function: coap_print_wellknown()*
+
+The *coap_print_wellknown*() function prints the names of all known resources
+of the given _context_ into _buf_ which has a maximum size of _buflen_. The
+first _offset_ bytes are skipped from the output to handle block transfers.
+Setting _offset_ to 0 means the entire (matching) information is output.
+Setting _offset_ to UINT_MAX skips, but calculates the size of, the (matching)
+output.
+The _query_filter_ is usually defined by the CoAP Uri-Query options as a query.
+
 RETURN VALUES
 -------------
 *coap_resource_init*(), *coap_resource_unknown_init*(),
-*coap_resource_unknown_init2*(), *coap_resource_proxy_uri_init*() and
-*coap_resource_proxy_uri_init2*() return a newly created resource
-or NULL if there is a malloc failure.
+*coap_resource_unknown_init2*(), *coap_resource_proxy_uri_init*(),
+*coap_resource_proxy_uri_init2*() and *coap_resource_reverse_proxy_init*()
+return a newly created resource or NULL if there is a malloc failure.
 
 *coap_delete_resource*() returns 0 on failure (_resource_ not
 found), 1 on success.
@@ -297,6 +352,13 @@ by the *coap_resource_set_userdata*() function or NULL.
 
 *coap_resource_get_uri_path*() returns the uri_path or NULL if
 there was a failure.
+
+*coap_get_resource_from_uri_path*() returns the resource or NULL
+if not found.
+
+*coap_print_wellknown*() returns COAP_PRINT_STATUS_ERROR on error. Otherwise,
+the lower 28 bits are set to the number of bytes that have actually been
+written. COAP_PRINT_STATUS_TRUNC is set when the output has been truncated.
 
 EXAMPLES
 --------
@@ -310,7 +372,8 @@ EXAMPLES
 
 static void
 hnd_get_index(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
+              const coap_pdu_t *request, const coap_string_t *query,
+              coap_pdu_t *response) {
   unsigned char buf[3];
   /* Remove (void) definition if variable is used */
   (void)resource;
@@ -337,7 +400,8 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
 
 static void
 hnd_delete_time(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
+                const coap_pdu_t *request, const coap_string_t *query,
+                coap_pdu_t *response) {
   /* Remove (void) definition if variable is used */
   (void)resource;
   (void)session;
@@ -351,7 +415,8 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
 
 static void
 hnd_get_time(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
+             const coap_pdu_t *request, const coap_string_t *query,
+             coap_pdu_t *response) {
   /* Remove (void) definition if variable is used */
   (void)resource;
   (void)session;
@@ -366,7 +431,8 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
 
 static void
 hnd_put_time(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
+             const coap_pdu_t *request, const coap_string_t *query,
+             coap_pdu_t *response) {
   /* Remove (void) definition if variable is used */
   (void)resource;
   (void)session;
@@ -428,7 +494,8 @@ init_resources(coap_context_t *ctx) {
 
 static void
 hnd_delete(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
+           const coap_pdu_t *request, const coap_string_t *query,
+           coap_pdu_t *response) {
   /* Remove (void) definition if variable is used */
   (void)session;
   (void)request;
@@ -448,8 +515,8 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
 
 static void
 hnd_get(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
-
+        const coap_pdu_t *request, const coap_string_t *query,
+        coap_pdu_t *response) {
   coap_str_const_t *get_uri_path;
 
   /* Remove (void) definition if variable is used */
@@ -475,7 +542,8 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
 
 static void
 hnd_put(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
+        const coap_pdu_t *request, const coap_string_t *query,
+        coap_pdu_t *response) {
   /* Remove (void) definition if variable is used */
   (void)resource;
   (void)session;
@@ -524,7 +592,8 @@ check_url_fn(coap_string_t *uri_path, uint8_t code) {
 
 static void
 hnd_put_unknown(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
+                const coap_pdu_t *request, const coap_string_t *query,
+                coap_pdu_t *response) {
   /* Remove (void) definition if variable is used */
   (void)resource;
   coap_pdu_code_t req_code = coap_pdu_get_code(request);
@@ -540,7 +609,7 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
   }
 
   /* Check if new URI Path is valid */
-  if (!check_url_fn (uri_path, req_code)) {
+  if (!check_url_fn(uri_path, req_code)) {
     coap_pdu_set_code(response, COAP_RESPONSE_CODE_NOT_FOUND);
     coap_delete_string(uri_path);
     return;
@@ -550,8 +619,8 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
    * Create a resource to handle the new URI
    * uri_path will get deleted when the resource is removed
    */
-  r = coap_resource_init((coap_str_const_t*)uri_path,
-        COAP_RESOURCE_FLAGS_RELEASE_URI | COAP_RESOURCE_FLAGS_NOTIFY_NON);
+  r = coap_resource_init((coap_str_const_t *)uri_path,
+                         COAP_RESOURCE_FLAGS_RELEASE_URI | COAP_RESOURCE_FLAGS_NOTIFY_NON);
   coap_register_request_handler(r, COAP_REQUEST_PUT, hnd_put);
   coap_register_request_handler(r, COAP_REQUEST_DELETE, hnd_delete);
   /* We possibly want to Observe the GETs */
@@ -602,9 +671,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

@@ -1,7 +1,7 @@
 /*
  * coap_async.h -- state management for asynchronous messages
  *
- * Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -30,12 +30,6 @@
  */
 
 /**
- * Returns @c 1 if libcoap was built with separate messages enabled,
- * @c 0 otherwise.
- */
-int coap_async_is_supported(void);
-
-/**
  * Allocates a new coap_async_t object and fills its fields according to
  * the given @p request. This function returns a pointer to the registered
  * coap_async_t object or @c NULL on error. Note that this function will
@@ -53,9 +47,9 @@ int coap_async_is_supported(void);
  * @return         A pointer to the registered coap_async_t object or @c
  *                 NULL in case of an error.
  */
-coap_async_t *coap_register_async(coap_session_t *session,
-                                  const coap_pdu_t *request,
-                                  coap_tick_t delay);
+COAP_API coap_async_t *coap_register_async(coap_session_t *session,
+                                           const coap_pdu_t *request,
+                                           coap_tick_t delay);
 
 /**
  * Update the delay timeout, so changing when the registered @p async triggers.
@@ -67,7 +61,7 @@ coap_async_t *coap_register_async(coap_session_t *session,
  * @param delay    The amount of time to delay before sending response, 0 means
  *                 wait forever.
  */
-void coap_async_set_delay(coap_async_t *async, coap_tick_t delay);
+COAP_API void coap_async_set_delay(coap_async_t *async, coap_tick_t delay);
 
 /**
  * Trigger the registered @p async.
@@ -77,7 +71,7 @@ void coap_async_set_delay(coap_async_t *async, coap_tick_t delay);
  *
  * @param async The async object to trigger.
  */
-void coap_async_trigger(coap_async_t *async);
+COAP_API void coap_async_trigger(coap_async_t *async);
 
 /**
  * Releases the memory that was allocated by coap_register_async() for the
@@ -86,7 +80,7 @@ void coap_async_trigger(coap_async_t *async);
  * @param session  The session to use.
  * @param async The object to delete.
  */
-void coap_free_async(coap_session_t *session, coap_async_t *async);
+COAP_API void coap_free_async(coap_session_t *session, coap_async_t *async);
 
 /**
  * Retrieves the object identified by @p token from the list of asynchronous
@@ -99,7 +93,7 @@ void coap_free_async(coap_session_t *session, coap_async_t *async);
  * @return        A pointer to the object identified by @p token or @c NULL if
  *                not found.
  */
-coap_async_t *coap_find_async(coap_session_t *session, coap_bin_const_t token);
+COAP_API coap_async_t *coap_find_async(coap_session_t *session, coap_bin_const_t token);
 
 /**
  * Set the application data pointer held in @p async. This overwrites any

@@ -1,7 +1,7 @@
 /*
  * coap_uri_internal.h -- URI functions for libcoap
  *
- * Copyright (C) 2019--2023 Olaf Bergmann <bergmann@tzi.org> and others
+ * Copyright (C) 2019--2024 Olaf Bergmann <bergmann@tzi.org> and others
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -34,6 +34,14 @@ typedef struct {
 } coap_uri_info_t;
 
 extern coap_uri_info_t coap_uri_scheme[COAP_URI_SCHEME_LAST];
+
+/**
+ * replace any % hex definitions with the actual character.
+ *
+ * @param optlist The optlist entry to modify if % hex definitions.
+ *
+ */
+void coap_replace_percents(coap_optlist_t *optlist);
 
 /** @} */
 

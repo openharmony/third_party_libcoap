@@ -1,7 +1,7 @@
 /*
  * coap_tcp_internal.h -- TCP functions for libcoap
  *
- * Copyright (C) 2019--2023 Olaf Bergmann <bergmann@tzi.org> and others
+ * Copyright (C) 2019--2024 Olaf Bergmann <bergmann@tzi.org> and others
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -93,13 +93,15 @@ int coap_socket_bind_tcp(coap_socket_t *sock,
  *                   session information
  * @param local_addr Filled in with the local address
  * @param remote_addr Filled in with the remote address
+ * @param extra Available for use by any underlying network stack.
  *
  * @return @c 1 if succesful, @c 0 if failure of some sort
 */
 int coap_socket_accept_tcp(coap_socket_t *server,
                            coap_socket_t *new_client,
                            coap_address_t *local_addr,
-                           coap_address_t *remote_addr);
+                           coap_address_t *remote_addr,
+                           void *extra);
 
 #endif /* !COAP_DISABLE_TCP */
 

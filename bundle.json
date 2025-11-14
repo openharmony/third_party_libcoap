@@ -1,7 +1,7 @@
 {
     "name": "@ohos/libcoap",
     "description": "libcoap is a C implementation of a lightweight application-protocol.",
-    "version": "4.3.4",
+    "version": "4.3.5",
     "license": "BSD-2-Clause",
     "publishAs": "code-segment",
     "segment": {

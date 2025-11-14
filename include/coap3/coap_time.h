@@ -1,7 +1,7 @@
 /*
  * coap_time.h -- Clock Handling
  *
- * Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -76,7 +76,6 @@ typedef int coap_tick_diff_t;
 
 COAP_STATIC_INLINE void
 coap_clock_init(void) {
-  clock_init();
 }
 
 COAP_STATIC_INLINE void

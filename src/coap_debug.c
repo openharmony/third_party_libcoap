@@ -1,6 +1,6 @@
 /* coap_debug.c -- debug utilities
  *
- * Copyright (C) 2010--2012,2014--2023 Olaf Bergmann <bergmann@tzi.org> and others
+ * Copyright (C) 2010--2012,2014--2024 Olaf Bergmann <bergmann@tzi.org> and others
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -13,7 +13,7 @@
  * @brief Debug utilities
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
 #if defined(HAVE_STRNLEN) && defined(__GNUC__) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE 1
@@ -57,9 +57,13 @@ static coap_log_t maxlog = LOG_CONF_LEVEL_COAP == 0 ? /* = LOG_LEVEL_NONE */
                              (LOG_CONF_LEVEL_COAP == 3 ? /* = LOG_LEVEL_INFO */
                               COAP_LOG_INFO :
                               COAP_LOG_DEBUG)));
-#else /* WITH_CONTIKI */
+#else /* !WITH_CONTIKI */
 static coap_log_t maxlog = COAP_LOG_WARN;  /* default maximum CoAP log level */
-#endif /* WITH_CONTIKI */
+#endif /* !WITH_CONTIKI */
+
+#ifdef RIOT_VERSION
+#include "flash_utils.h"
+#endif /* RIOT_VERSION */
 
 static int use_fprintf_for_show_pdu = 1; /* non zero to output with fprintf */
 
@@ -108,10 +112,21 @@ static const char *loglevels[] = {
   "Emrg", "Alrt", "Crit", "Err ", "Warn", "Note", "Info", "Debg"
 };
 
+const char *
+coap_log_level_desc(coap_log_t level) {
+  static char bad[8];
+  if (level >= sizeof(loglevels)/sizeof(loglevels[0])) {
+    snprintf(bad, sizeof(bad), "%4d", level);
+    return bad;
+  } else {
+    return loglevels[level];
+  }
+}
+
 #ifdef WITH_CONTIKI
 void
 coap_print_contiki_prefix(coap_log_t level) {
-  printf("[%s: COAP      ] ", loglevels[level]);
+  printf("[%s: COAP      ] ", coap_log_level_desc(level));
 }
 #endif /* WITH_CONTIKI */
 
@@ -216,7 +231,7 @@ print_readable(const uint8_t *data, size_t len,
  */
 size_t
 coap_print_addr(const coap_address_t *addr, unsigned char *buf, size_t len) {
-#if defined( HAVE_ARPA_INET_H ) || defined( HAVE_WS2TCPIP_H )
+#if (defined( HAVE_ARPA_INET_H ) || defined( HAVE_WS2TCPIP_H )) && !defined(RIOT_VERSION)
   char scratch[INET6_ADDRSTRLEN];
 
   assert(buf);
@@ -240,7 +255,7 @@ coap_print_addr(const coap_address_t *addr, unsigned char *buf, size_t len) {
 #endif /* COAP_IPV6_SUPPORT */
 #if COAP_AF_UNIX_SUPPORT
   case AF_UNIX:
-    snprintf((char *)buf, len, "'%s'", addr->addr.cun.sun_path);
+    snprintf((char *)buf, len, "%s", addr->addr.cun.sun_path);
     break;
 #endif /* COAP_AF_UNIX_SUPPORT */
   default:
@@ -253,7 +268,37 @@ coap_print_addr(const coap_address_t *addr, unsigned char *buf, size_t len) {
 
 #else /* HAVE_ARPA_INET_H */
 
-# if WITH_CONTIKI
+# if defined(RIOT_VERSION)
+  char scratch[INET6_ADDRSTRLEN];
+
+  assert(buf);
+  assert(len);
+  buf[0] = '\000';
+
+  switch (addr->riot.family) {
+#if COAP_IPV4_SUPPORT
+  case AF_INET:
+    snprintf((char *)buf, len, "%s:%d",
+             coap_print_ip_addr(addr, scratch, sizeof(scratch)),
+             coap_address_get_port(addr));
+    break;
+#endif /* COAP_IPV4_SUPPORT */
+#if COAP_IPV6_SUPPORT
+  case AF_INET6:
+    snprintf((char *)buf, len, "[%s]:%d",
+             coap_print_ip_addr(addr, scratch, sizeof(scratch)),
+             coap_address_get_port(addr));
+    break;
+#endif /* COAP_IPV6_SUPPORT */
+  default:
+    /* Include trailing NULL if possible */
+    memcpy(buf, "(unknown address type)", min(22+1, len));
+    buf[len-1] = '\000';
+    break;
+  }
+  return strlen((char *)buf);
+
+# elif WITH_CONTIKI
 
   char scratch[INET6_ADDRSTRLEN];
 #ifdef HAVE_SNPRINTF
@@ -362,7 +407,7 @@ coap_print_addr(const coap_address_t *addr, unsigned char *buf, size_t len) {
  */
 const char *
 coap_print_ip_addr(const coap_address_t *addr, char *buf, size_t len) {
-#if defined( HAVE_ARPA_INET_H ) || defined( HAVE_WS2TCPIP_H )
+#if (defined( HAVE_ARPA_INET_H ) || defined( HAVE_WS2TCPIP_H )) && !defined(RIOT_VERSION)
   const void *addrptr = NULL;
 
   assert(buf);
@@ -386,7 +431,7 @@ coap_print_ip_addr(const coap_address_t *addr, char *buf, size_t len) {
 #endif /* COAP_IPV6_SUPPORT */
 #if COAP_AF_UNIX_SUPPORT
   case AF_UNIX:
-    snprintf(buf, len, "'%s'", addr->addr.cun.sun_path);
+    snprintf(buf, len, "%s", addr->addr.cun.sun_path);
     return buf;
 #endif /* COAP_AF_UNIX_SUPPORT */
   default:
@@ -406,7 +451,37 @@ coap_print_ip_addr(const coap_address_t *addr, char *buf, size_t len) {
 
 #else /* HAVE_ARPA_INET_H */
 
-# if WITH_CONTIKI
+# if defined(RIOT_VERSION)
+  assert(buf);
+  assert(len);
+  buf[0] = '\000';
+
+  switch (addr->riot.family) {
+#if COAP_IPV4_SUPPORT
+  case AF_INET:
+    if (ipv4_addr_to_str(buf, (ipv4_addr_t *)&addr->riot.addr.ipv4, (size_t)len) == NULL) {
+      goto error;
+    }
+    break;
+#endif /* COAP_IPV4_SUPPORT */
+#if COAP_IPV6_SUPPORT
+  case AF_INET6:
+    if (ipv6_addr_to_str(buf, (ipv6_addr_t *)&addr->riot.addr.ipv6, (size_t)len) == NULL) {
+      goto error;
+    }
+    break;
+#endif /* COAP_IPV6_SUPPORT */
+  default:
+    goto error;
+  }
+  return buf;
+
+error:
+  coap_log_err("coap_print_ip_addr: inet_ntop\n");
+  buf[0] = '\000';
+  return buf;
+
+# elif WITH_CONTIKI
   char *p = buf;
   uint8_t i;
 #  if NETSTACK_CONF_WITH_IPV6
@@ -703,7 +778,7 @@ void
 coap_show_pdu(coap_log_t level, const coap_pdu_t *pdu) {
 #if COAP_CONSTRAINED_STACK
   /* Proxy-Uri: can be 1034 bytes long */
-  /* buf and outbuf protected by mutex m_show_pdu */
+  /* buf and outbuf can be protected by global_lock if needed */
   static unsigned char buf[min(COAP_DEBUG_BUF_SIZE, 1035)];
   static char outbuf[COAP_DEBUG_BUF_SIZE];
 #else /* ! COAP_CONSTRAINED_STACK */
@@ -727,10 +802,6 @@ coap_show_pdu(coap_log_t level, const coap_pdu_t *pdu) {
   /* Save time if not needed */
   if (level > coap_get_log_level())
     return;
-
-#if COAP_CONSTRAINED_STACK
-  coap_mutex_lock(&m_show_pdu);
-#endif /* COAP_CONSTRAINED_STACK */
 
   if (!pdu->session || COAP_PROTO_NOT_RELIABLE(pdu->session->proto)) {
     snprintf(outbuf, sizeof(outbuf), "v:%d t:%s c:%s i:%04x {",
@@ -1043,10 +1114,6 @@ no_more:
     outbuflen--;
   snprintf(&outbuf[outbuflen], sizeof(outbuf)-outbuflen,  "\n");
   COAP_DO_SHOW_OUTPUT_LINE;
-
-#if COAP_CONSTRAINED_STACK
-  coap_mutex_unlock(&m_show_pdu);
-#endif /* COAP_CONSTRAINED_STACK */
 }
 
 void
@@ -1141,6 +1208,16 @@ coap_string_tls_version(char *buffer, size_t bufsize) {
              (unsigned long)((tls_version->built_version >> 16) & 0xff),
              (unsigned long)((tls_version->built_version >> 8) & 0xff));
     break;
+  case COAP_TLS_LIBRARY_WOLFSSL:
+    snprintf(buffer, bufsize, "TLS Library: wolfSSL - runtime %lu.%lu.%lu, "
+             "libcoap built for %lu.%lu.%lu",
+             (unsigned long)(tls_version->version >> 24),
+             (unsigned long)((tls_version->version >> 12) & 0xfff),
+             (unsigned long)((tls_version->version >> 0) & 0xfff),
+             (unsigned long)(tls_version->built_version >> 24),
+             (unsigned long)((tls_version->built_version >> 12) & 0xfff),
+             (unsigned long)((tls_version->built_version >> 0) & 0xfff));
+    break;
   default:
     snprintf(buffer, bufsize, "Library type %d unknown", tls_version->type);
     break;
@@ -1156,6 +1233,7 @@ coap_string_tls_support(char *buffer, size_t bufsize) {
   const int have_pki = coap_dtls_pki_is_supported();
   const int have_pkcs11 = coap_dtls_pkcs11_is_supported();
   const int have_rpk = coap_dtls_rpk_is_supported();
+  const int have_cid = coap_dtls_cid_is_supported();
   const int have_oscore = coap_oscore_is_supported();
   const int have_ws = coap_ws_is_supported();
 
@@ -1164,13 +1242,14 @@ coap_string_tls_support(char *buffer, size_t bufsize) {
     return buffer;
   }
   snprintf(buffer, bufsize,
-           "(%sDTLS and %sTLS support; %sPSK, %sPKI, %sPKCS11, and %sRPK support)\n(%sOSCORE)\n(%sWebSockets)",
+           "(%sDTLS and %sTLS support; %sPSK, %sPKI, %sPKCS11, %sRPK and %sCID support)\n(%sOSCORE)\n(%sWebSockets)",
            have_dtls ? "" : "No ",
            have_tls ? "" : "no ",
            have_psk ? "" : "no ",
            have_pki ? "" : "no ",
            have_pkcs11 ? "" : "no ",
            have_rpk ? "" : "no ",
+           have_cid ? "" : "no ",
            have_oscore ? "Have " : "No ",
            have_ws ? "Have " : "No ");
   return buffer;
@@ -1188,23 +1267,21 @@ coap_log_impl(coap_log_t level, const char *format, ...) {
 
   if (log_handler) {
 #if COAP_CONSTRAINED_STACK
-    /* message protected by mutex m_log_impl */
+    /* message can be protected by global_lock if needed */
     static char message[COAP_DEBUG_BUF_SIZE];
 #else /* ! COAP_CONSTRAINED_STACK */
     char message[COAP_DEBUG_BUF_SIZE];
 #endif /* ! COAP_CONSTRAINED_STACK */
     va_list ap;
     va_start(ap, format);
-#if COAP_CONSTRAINED_STACK
-    coap_mutex_lock(&m_log_impl);
-#endif /* COAP_CONSTRAINED_STACK */
 
+#ifdef RIOT_VERSION
+    flash_vsnprintf(message, sizeof(message), format, ap);
+#else /* !RIOT_VERSION */
     vsnprintf(message, sizeof(message), format, ap);
+#endif /* !RIOT_VERSION */
     va_end(ap);
     log_handler(level, message);
-#if COAP_CONSTRAINED_STACK
-    coap_mutex_unlock(&m_log_impl);
-#endif /* COAP_CONSTRAINED_STACK */
   } else {
     char timebuf[32];
     coap_tick_t now;
@@ -1219,14 +1296,14 @@ coap_log_impl(coap_log_t level, const char *format, ...) {
     if (len)
       fprintf(log_fd, "%.*s ", (int)len, timebuf);
 
-    if (level >= sizeof(loglevels)/sizeof(loglevels[0])) {
-      fprintf(log_fd, "%4d ", level);
-    } else {
-      fprintf(log_fd, "%s ", loglevels[level]);
-    }
+    fprintf(log_fd, "%s ", coap_log_level_desc(level));
 
     va_start(ap, format);
+#ifdef RIOT_VERSION
+    flash_vfprintf(log_fd, format, ap);
+#else /* !RIOT_VERSION */
     vfprintf(log_fd, format, ap);
+#endif /* !RIOT_VERSION */
     va_end(ap);
     fflush(log_fd);
   }
@@ -1237,7 +1314,7 @@ static struct packet_num_interval {
   int end;
 } packet_loss_intervals[10];
 static int num_packet_loss_intervals = 0;
-static int packet_loss_level = 0;
+static uint16_t packet_loss_level = 0;
 static int send_packet_count = 0;
 
 int
@@ -1296,7 +1373,7 @@ coap_debug_send_packet(void) {
   }
   if (packet_loss_level > 0) {
     uint16_t r = 0;
-    coap_prng((uint8_t *)&r, 2);
+    coap_prng_lkd((uint8_t *)&r, 2);
     if (r < packet_loss_level) {
       coap_log_debug("Packet %u dropped\n", send_packet_count);
       return 0;
@@ -1307,8 +1384,10 @@ coap_debug_send_packet(void) {
 
 void
 coap_debug_reset(void) {
+  log_handler = NULL;
   maxlog = COAP_LOG_WARN;
   use_fprintf_for_show_pdu = 1;
+  memset(&packet_loss_intervals, 0, sizeof(packet_loss_intervals));
   num_packet_loss_intervals = 0;
   packet_loss_level = 0;
   send_packet_count = 0;

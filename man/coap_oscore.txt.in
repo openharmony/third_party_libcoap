@@ -11,7 +11,6 @@ coap_oscore(3)
 NAME
 ----
 coap_oscore,
-coap_oscore_is_supported,
 coap_new_oscore_conf,
 coap_delete_oscore_conf,
 coap_new_oscore_recipient,
@@ -25,8 +24,6 @@ coap_context_oscore_server
 SYNOPSIS
 --------
 *#include <coap@LIBCOAP_API_VERSION@/coap.h>*
-
-*int coap_oscore_is_supported(void);*
 
 *coap_oscore_conf_t *coap_new_oscore_conf(coap_str_const_t _conf_mem_,
 coap_oscore_save_seq_num_t _save_seq_num_func_,
@@ -59,7 +56,8 @@ coap_oscore_conf_t *_oscore_conf_);*
 
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -80,17 +78,21 @@ CALLBACK HANDLER
 The coap_oscore_save_seq_num_t method handler function prototype is defined as:
 [source, c]
 ----
+/**
+ * Definition of the function used to save the current Sender Sequence Number
+ *
+ * @param sender_seq_num The Sender Sequence Number to save in non-volatile
+ *                      memory.
+ * @param param The save_seq_num_func_param provided to
+ *              coap_new_oscore_context().
+ *
+ * @return @c 1 if success, else @c 0 if a failure of some sort.
+ */
 typedef int (*coap_oscore_save_seq_num_t)(uint64_t sender_seq_num, void *param);
 ----
-and returns 0 on failure, 1 on succes.
 
 FUNCTIONS
 ---------
-
-*Function: coap_oscore_is_supported()*
-
-The *coap_oscore_is_supported*() function returns 1 if OSCORE is supported,
-otherwise 0.
 
 *Function: coap_new_oscore_conf()*
 
@@ -200,9 +202,9 @@ client session or NULL if there is a malloc or parameter failure.
 *coap_new_oscore_conf*() returns a _coap_oscore_conf_t_
 or NULL on failure.
 
-*coap_oscore_is_supported*(), *coap_context_oscore_server*(),
-*coap_delete_oscore_conf*(), *coap_new_oscore_recipient*() and
-*coap_delete_oscore_recipient*() return 0 on failure, 1 on success.
+*coap_context_oscore_server*(), *coap_delete_oscore_conf*(),
+*coap_new_oscore_recipient*() and *coap_delete_oscore_recipient*()
+return 0 on failure, 1 on success.
 
 EXAMPLES
 --------
@@ -216,17 +218,17 @@ EXAMPLES
 #include <stdio.h>
 
 static uint8_t oscore_config[] =
-  "master_secret,hex,\"0102030405060708090a0b0c0d0e0f10\"\n"
-  "master_salt,hex,\"9e7ca92223786340\"\n"
-  "server_id,ascii,\"client\"\n"
-  "recipient_id,ascii,\"server\"\n"
-  "replay_window,integer,30\n"
-  "aead_alg,integer,10\n"
-  "hkdf_alg,integer,-10\n"
-;
+    "master_secret,hex,\"0102030405060708090a0b0c0d0e0f10\"\n"
+    "master_salt,hex,\"9e7ca92223786340\"\n"
+    "server_id,ascii,\"client\"\n"
+    "recipient_id,ascii,\"server\"\n"
+    "replay_window,integer,30\n"
+    "aead_alg,integer,10\n"
+    "hkdf_alg,integer,-10\n"
+    ;
 static FILE *oscore_seq_num_fp = NULL;
 /* Not a particularly safe place to keep next Sender Sequence Number ... */
-static const char* oscore_seq_save_file = "/tmp/client.seq";
+static const char *oscore_seq_save_file = "/tmp/client.seq";
 
 static int
 oscore_save_seq_num(uint64_t sender_seq_num, void *param COAP_UNUSED) {
@@ -239,7 +241,7 @@ oscore_save_seq_num(uint64_t sender_seq_num, void *param COAP_UNUSED) {
 }
 
 static coap_session_t *
-setup_client_session (struct in_addr ip_address) {
+setup_client_session(struct in_addr ip_address) {
   coap_session_t *session;
   coap_address_t server;
   /* See coap_context(3) */
@@ -256,10 +258,10 @@ setup_client_session (struct in_addr ip_address) {
   coap_address_init(&server);
   server.addr.sa.sa_family = AF_INET;
   server.addr.sin.sin_addr = ip_address;
-  server.addr.sin.sin_port = htons (5683);
+  server.addr.sin.sin_port = htons(5683);
 
   if (coap_oscore_is_supported()) {
-    coap_str_const_t config = { sizeof (oscore_config), oscore_config };
+    coap_str_const_t config = { sizeof(oscore_config), oscore_config };
     uint64_t start_seq_num = 0;
     coap_oscore_conf_t *oscore_conf;
 
@@ -270,7 +272,7 @@ setup_client_session (struct in_addr ip_address) {
         oscore_seq_num_fp = fopen(oscore_seq_save_file, "w+");
         if (oscore_seq_num_fp == NULL) {
           coap_log_err("OSCORE save restart info file error: %s\n",
-                   oscore_seq_save_file);
+                       oscore_seq_save_file);
           return NULL;
         }
       }
@@ -304,17 +306,17 @@ setup_client_session (struct in_addr ip_address) {
 #include <stdio.h>
 
 static uint8_t oscore_config[] =
-  "master_secret,hex,\"0102030405060708090a0b0c0d0e0f10\"\n"
-  "master_salt,hex,\"9e7ca92223786340\"\n"
-  "sender_id,ascii,\"server\"\n"
-  "recipient_id,ascii,\"client\"\n"
-  "replay_window,integer,30\n"
-  "aead_alg,integer,10\n"
-  "hkdf_alg,integer,-10\n"
-;
+    "master_secret,hex,\"0102030405060708090a0b0c0d0e0f10\"\n"
+    "master_salt,hex,\"9e7ca92223786340\"\n"
+    "sender_id,ascii,\"server\"\n"
+    "recipient_id,ascii,\"client\"\n"
+    "replay_window,integer,30\n"
+    "aead_alg,integer,10\n"
+    "hkdf_alg,integer,-10\n"
+    ;
 static FILE *oscore_seq_num_fp = NULL;
 /* Not a particularly safe place to keep next Sender Sequence Number ... */
-static const char* oscore_seq_save_file = "/tmp/server.seq";
+static const char *oscore_seq_save_file = "/tmp/server.seq";
 
 static int
 oscore_save_seq_num(uint64_t sender_seq_num, void *param COAP_UNUSED) {
@@ -327,7 +329,7 @@ oscore_save_seq_num(uint64_t sender_seq_num, void *param COAP_UNUSED) {
 }
 
 static int
-setup_context (void) {
+setup_context(void) {
   /* See coap_context(3) */
   coap_context_t *context = coap_new_context(NULL);
 
@@ -339,7 +341,7 @@ setup_context (void) {
                               COAP_BLOCK_USE_LIBCOAP | COAP_BLOCK_SINGLE_BODY);
 
   if (coap_oscore_is_supported()) {
-    coap_str_const_t config = { sizeof (oscore_config), oscore_config };
+    coap_str_const_t config = { sizeof(oscore_config), oscore_config };
     uint64_t start_seq_num = 0;
     coap_oscore_conf_t *oscore_conf;
 
@@ -350,7 +352,7 @@ setup_context (void) {
         oscore_seq_num_fp = fopen(oscore_seq_save_file, "w+");
         if (oscore_seq_num_fp == NULL) {
           coap_log_err("OSCORE save restart info file error: %s\n",
-                   oscore_seq_save_file);
+                       oscore_seq_save_file);
           return 0;
         }
       }
@@ -366,12 +368,12 @@ setup_context (void) {
   }
   return 1;
 }
-
 ----
 
 SEE ALSO
 --------
-*coap_endpoint_client*(3), *coap_endpoint_server*(3) and *coap-oscore-conf*(5)
+*coap_endpoint_client*(3), *coap_endpoint_server*(3), *coap-oscore-conf*(5) and
+*coap_supported*(3)
 
 FURTHER INFORMATION
 -------------------
@@ -385,9 +387,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

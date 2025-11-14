@@ -2,7 +2,7 @@
 
 /* coap-client -- simple CoAP client
  *
- * Copyright (C) 2010--2023 Olaf Bergmann <bergmann@tzi.org> and others
+ * Copyright (C) 2010--2024 Olaf Bergmann <bergmann@tzi.org> and others
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -76,6 +76,7 @@ static coap_uri_t proxy = { {0, NULL}, 0, {0, NULL}, {0, NULL}, 0 };
 static int proxy_scheme_option = 0;
 static int uri_host_option = 0;
 static unsigned int ping_seconds = 0;
+static int setup_cid = 0;
 
 #define REPEAT_DELAY_MS 1000
 static size_t repeat_count = 1;
@@ -152,6 +153,9 @@ int doing_observe = 0;
 
 static coap_oscore_conf_t *oscore_conf = NULL;
 static int doing_oscore = 0;
+static int doing_tls_engine = 0;
+static char *tls_engine_conf = NULL;
+static int ec_jpake = 0;
 
 static int quit = 0;
 
@@ -318,6 +322,7 @@ event_handler(coap_session_t *session COAP_UNUSED,
   case COAP_EVENT_OSCORE_DECODE_ERROR:
   case COAP_EVENT_WS_PACKET_SIZE:
   case COAP_EVENT_WS_CLOSED:
+  case COAP_EVENT_BAD_PACKET:
     quit = 1;
     break;
   case COAP_EVENT_DTLS_CONNECTED:
@@ -331,7 +336,6 @@ event_handler(coap_session_t *session COAP_UNUSED,
   case COAP_EVENT_XMIT_BLOCK_FAIL:
   case COAP_EVENT_SERVER_SESSION_NEW:
   case COAP_EVENT_SERVER_SESSION_DEL:
-  case COAP_EVENT_BAD_PACKET:
   case COAP_EVENT_MSG_RETRANSMITTED:
   case COAP_EVENT_WS_CONNECTED:
   case COAP_EVENT_KEEPALIVE_FAILURE:
@@ -357,7 +361,6 @@ nack_handler(coap_session_t *session COAP_UNUSED,
   switch (reason) {
   case COAP_NACK_TOO_MANY_RETRIES:
   case COAP_NACK_NOT_DELIVERABLE:
-  case COAP_NACK_RST:
   case COAP_NACK_TLS_FAILED:
   case COAP_NACK_WS_FAILED:
   case COAP_NACK_TLS_LAYER_FAILED:
@@ -365,8 +368,15 @@ nack_handler(coap_session_t *session COAP_UNUSED,
     coap_log_err("cannot send CoAP pdu\n");
     quit = 1;
     break;
-  case COAP_NACK_ICMP_ISSUE:
+  case COAP_NACK_RST:
+    coap_log_info("received RST pdu response\n");
+    quit = 1;
+    break;
   case COAP_NACK_BAD_RESPONSE:
+    coap_log_info("received bad response pdu\n");
+    quit = 1;
+    break;
+  case COAP_NACK_ICMP_ISSUE:
   default:
     ;
   }
@@ -488,7 +498,7 @@ usage(const char *program, const char *version) {
     program = ++p;
 
   fprintf(stderr, "%s v%s -- a small CoAP implementation\n"
-          "Copyright (C) 2010-2023 Olaf Bergmann <bergmann@tzi.org> and others\n\n"
+          "Copyright (C) 2010-2024 Olaf Bergmann <bergmann@tzi.org> and others\n\n"
           "Build: %s\n"
           "%s\n"
           , program, version, lib_build,
@@ -496,20 +506,20 @@ usage(const char *program, const char *version) {
   fprintf(stderr, "%s\n", coap_string_tls_support(buffer, sizeof(buffer)));
   fprintf(stderr, "\n"
           "Usage: %s [-a addr] [-b [num,]size] [-e text] [-f file] [-l loss]\n"
-          "\t\t[-m method] [-o file] [-p port] [-r] [-s duration] [-t type]\n"
-          "\t\t[-v num] [-w] [-A type] [-B seconds]\n"
+          "\t\t[-m method] [-o file] [-p port] [-q tls_engine_conf_file] [-r]\n"
+          "\t\t[-s duration] [-t type] [-v num] [-w] [-A type] [-B seconds]\n"
           "\t\t[-E oscore_conf_file[,seq_file]] [-G count] [-H hoplimit]\n"
           "\t\t[-K interval] [-N] [-O num,text] [-P scheme://address[:port]\n"
           "\t\t[-T token] [-U]  [-V num] [-X size]\n"
-          "\t\t[[-h match_hint_file] [-k key] [-u user]]\n"
+          "\t\t[[-d count]]\n"
+          "\t\t[[h match_hint_file] [-k key] [-u user] [-2]]\n"
           "\t\t[[-c certfile] [-j keyfile] [-n] [-C cafile]\n"
-          "\t\t[-J pkcs11_pin] [-M raw_pk] [-R trust_casfile]\n"
-          "\t\t[-S match_pki_sni_file]] URI\n"
+          "\t\t[-J pkcs11_pin] [-M raw_pk] [-R trust_casfile]] URI\n"
           "\tURI can be an absolute URI or a URI prefixed with scheme and host\n\n"
           "General Options\n"
           "\t-a addr\t\tThe local interface address to use\n"
           "\t-b [num,]size\tBlock size to be used in GET/PUT/POST requests\n"
-          "\t       \t\t(value must be a multiple of 16 not larger than 1024)\n"
+          "\t       \t\t(value must be 16, 32, 64, 128, 256, 512 or 1024)\n"
           "\t       \t\tIf num is present, the request chain will start at\n"
           "\t       \t\tblock num\n"
           "\t-e text\t\tInclude text as payload (use percent-encoding for\n"
@@ -524,7 +534,9 @@ usage(const char *program, const char *version) {
           "\t       \t\tdefault is 'get'\n"
           "\t-o file\t\tOutput received data to this file (use '-' for STDOUT)\n"
           "\t-p port\t\tSend from the specified port\n"
-          "\t-r     \t\tUse reliable protocol (TCP or TLS); requires TCP support\n"
+          "\t-q tls_engine_conf_file\n"
+          "\t       \t\ttls_engine_conf_file contains TLS ENGINE configuration.\n"
+          "\t       \t\tSee coap-tls-engine-conf(5) for definitions.\n"
           "\t-s duration\tSubscribe to / Observe resource for given duration\n"
           "\t       \t\tin seconds\n"
           "\t-t type\t\tContent format for given resource for PUT/POST\n"
@@ -548,7 +560,7 @@ usage(const char *program, const char *version) {
           "\t-K interval\tSend a ping after interval seconds of inactivity\n"
           "\t-L value\tSum of one or more COAP_BLOCK_* flag valuess for block\n"
           "\t       \t\thandling methods. Default is 1 (COAP_BLOCK_USE_LIBCOAP)\n"
-          "\t       \t\t(Sum of one or more of 1,2 and 16)\n"
+          "\t       \t\t(Sum of one or more of 1,2,4,8,16 and 32)\n"
           "\t-N     \t\tSend NON-confirmable message\n"
           "\t-O num,text\tAdd option num with contents text to request. If the\n"
           "\t       \t\ttext begins with 0x, then the hex text (two [0-9a-f] per\n"
@@ -557,7 +569,8 @@ usage(const char *program, const char *version) {
           "\t       \t\tScheme, address and optional port to define how to\n"
           "\t       \t\tconnect to a CoAP proxy (automatically adds Proxy-Uri\n"
           "\t       \t\toption to request) to forward the request to.\n"
-          "\t       \t\tScheme is one of coap, coaps, coap+tcp and coaps+tcp\n"
+          "\t       \t\tScheme is one of coap, coaps, coap+tcp, coaps+tcp,\n"
+          "\t       \t\tcoap+ws, and coaps+ws\n"
           "\t-T token\tDefine the initial starting token (up to 24 characters)\n"
           "\t-U     \t\tNever include Uri-Host or Uri-Port options\n"
           "\t-V num \t\tVerbosity level (default 3, maximum is 7) for (D)TLS\n"
@@ -565,6 +578,13 @@ usage(const char *program, const char *version) {
           "\t-X size\t\tMaximum message size to use for TCP based connections\n"
           "\t       \t\t(default is 8388864). Maximum value of 2^32 -1\n"
           ,program, wait_seconds);
+  fprintf(stderr,
+          "DTLS Options (if supported by underlying (D)TLS library)\n"
+          "\t-d count\n"
+          "\t       \t\tFor DTLS, enable use of Connection-ID. If count\n"
+          "\t       \t\tis not 0, then the client will changes its source port\n"
+          "\t       \t\tevery count packets to test CID\n"
+         );
   fprintf(stderr,
           "PSK Options (if supported by underlying (D)TLS library)\n"
           "\t-h match_hint_file\n"
@@ -576,8 +596,11 @@ usage(const char *program, const char *version) {
           "\t       \t\t hint_to_match,use_user,with_key\n"
           "\t       \t\tNote: -k and -u still need to be defined for the default\n"
           "\t       \t\tin case there is no match\n"
-          "\t-k key \t\tPre-shared key for the specified user identity\n"
+          "\t-k key \t\tPre-shared key for the specified user identityt. If the\n"
+          "\t       \t\tkey begins with 0x, then the hex text (two [0-9a-f] per\n"
+          "\t       \t\tbyte) is converted to binary data\n"
           "\t-u user\t\tUser identity to send for pre-shared key mode\n"
+          "\t-2     \t\tUse EC-JPAKE negotiation (if supported)\n"
           "PKI Options (if supported by underlying (D)TLS library)\n"
           "\tNote: If any one of '-c certfile', '-j keyfile' or '-C cafile' is in\n"
           "\tPKCS11 URI naming format (pkcs11: prefix), then any remaining non\n"
@@ -591,7 +614,8 @@ usage(const char *program, const char *version) {
           "\t       \t\tcertificate in '-c certfile' if the parameter is\n"
           "\t       \t\tdifferent from certfile in '-c certfile'\n"
           "\t-n     \t\tDisable remote peer certificate checking\n"
-          "\t-C cafile\tPEM file or PKCS11 URI for the CA certificate that was\n"
+          "\t-C cafile\tPEM file or PKCS11 URI for the CA certificate and any\n"
+          "\t       \t\tintermediate CAs that was\n"
           "\t       \t\tused to sign the server certfile. Ideally the client\n"
           "\t       \t\tcertificate should be signed by the same CA so that\n"
           "\t       \t\tmutual authentication can take place. The contents of\n"
@@ -612,7 +636,7 @@ usage(const char *program, const char *version) {
           "\t       \t\tUsing '-R trust_casfile' disables common CA mutual\n"
           "\t       \t\tauthentication which can only be done by using\n"
           "\t       \t\t'-C cafile'.\n"
-          "\t       \t\tUsing the -C or -R options will will trigger the\n"
+          "\t       \t\tUsing the -C or -R options will trigger the\n"
           "\t       \t\tvalidation of the server certificate unless overridden\n"
           "\t       \t\tby the -n option\n"
          );
@@ -628,6 +652,7 @@ usage(const char *program, const char *version) {
           "\tcoap-client -m get coaps://%%2Funix%%2Fdomain%%2Fpath%%2Fdtls/.well-known/core\n"
           "\tcoap-client -m get coaps+tcp://%%2Funix%%2Fdomain%%2Fpath%%2Ftls/.well-known/core\n"
           "\tcoap-client -m get -T cafe coap://[::1]/time\n"
+          "\tcoap-client -m get -T cafe -P coap://upstream-proxy coap://[::1]/time\n"
           "\techo -n 1000 | coap-client -m put -T cafe coap://[::1]/time -f -\n"
          );
 }
@@ -810,6 +835,28 @@ cmdline_oscore(char *arg) {
   return 0;
 }
 
+static int
+cmdline_tls_engine(char *arg) {
+  uint8_t *buf;
+  size_t length;
+  coap_str_const_t file_mem;
+
+  /* Need a rw var to free off later and file_mem.s is a const */
+  buf = read_file_mem(arg, &length);
+  if (buf == NULL) {
+    fprintf(stderr, "Openssl ENGINE configuration file error: %s\n", arg);
+    return 0;
+  }
+  file_mem.s = buf;
+  file_mem.length = length;
+  if (!coap_tls_engine_configure(&file_mem)) {
+    coap_free(buf);
+    return 0;
+  }
+  coap_free(buf);
+  return 1;
+}
+
 /**
  * Sets global URI options according to the URI passed as @p arg.
  * This function returns 0 on success or -1 on error.
@@ -888,8 +935,8 @@ again:
   } else if (size > 1024) {
     coap_log_warn("Maximum block size is 1024\n");
     return 0;
-  } else if ((size % 16) != 0) {
-    coap_log_warn("Block size %u is not a multiple of 16\n", size);
+  } else if (size != ((1 << (coap_fls(size >> 4) - 1) << 4))) {
+    coap_log_warn("Block size %u invalid\n", size);
     return 0;
   }
   if (size)
@@ -908,7 +955,10 @@ set_blocksize(void) {
   unsigned int opt_length;
 
   if (method != COAP_REQUEST_DELETE) {
-    if (method == COAP_REQUEST_GET || method == COAP_REQUEST_FETCH) {
+    block.m = (1ull << (block.szx + 4)) < payload.length;
+
+    if (!block.m &&
+        (method == COAP_REQUEST_GET || method == COAP_REQUEST_FETCH)) {
       if (coap_q_block_is_supported() && block_mode & COAP_BLOCK_TRY_Q_BLOCK)
         opt = COAP_OPTION_Q_BLOCK2;
       else
@@ -1222,6 +1272,12 @@ static ssize_t
 cmdline_read_key(char *arg, unsigned char **buf, size_t maxlen) {
   size_t len = strnlen(arg, maxlen);
   if (len) {
+    /* read hex string alternative when arg starts with "0x" */
+    if (len >= 4 && arg[0] == '0' && arg[1] == 'x') {
+      /* As the command line option is part of our environment we can do
+       * the conversion in place. */
+      len = convert_hex_string(arg + 2, (uint8_t *)arg);
+    }
     *buf = (unsigned char *)arg;
     return len;
   }
@@ -1336,7 +1392,6 @@ setup_pki(coap_context_t *ctx) {
     }
   }
 
-  memset(client_sni, 0, sizeof(client_sni));
   memset(&dtls_pki, 0, sizeof(dtls_pki));
   dtls_pki.version = COAP_DTLS_PKI_SETUP_VERSION;
   if (ca_file || root_ca_file) {
@@ -1362,17 +1417,28 @@ setup_pki(coap_context_t *ctx) {
     dtls_pki.verify_peer_cert        = verify_peer_cert;
   }
   dtls_pki.is_rpk_not_cert = is_rpk_not_cert;
+  dtls_pki.use_cid = setup_cid;
   dtls_pki.validate_cn_call_back = verify_cn_callback;
-  if ((uri.host.length == 3 && memcmp(uri.host.s, "::1", 3) != 0) ||
-      (uri.host.length == 9 && memcmp(uri.host.s, "127.0.0.1", 9) != 0))
-    memcpy(client_sni, uri.host.s, min(uri.host.length, sizeof(client_sni)-1));
-  else
-    memcpy(client_sni, "localhost", 9);
-
+  if (proxy.host.length) {
+    snprintf(client_sni, sizeof(client_sni), "%*.*s", (int)proxy.host.length, (int)proxy.host.length,
+             proxy.host.s);
+  } else {
+    snprintf(client_sni, sizeof(client_sni), "%*.*s", (int)uri.host.length, (int)uri.host.length,
+             uri.host.s);
+  }
   dtls_pki.client_sni = client_sni;
-  if ((key_file && strncasecmp(key_file, "pkcs11:", 7) == 0) ||
-      (cert_file && strncasecmp(cert_file, "pkcs11:", 7) == 0) ||
-      (ca_file && strncasecmp(ca_file, "pkcs11:", 7) == 0)) {
+  if (doing_tls_engine) {
+    dtls_pki.pki_key.key_type = COAP_PKI_KEY_DEFINE;
+    dtls_pki.pki_key.key.define.public_cert.s_byte = cert_file;
+    dtls_pki.pki_key.key.define.private_key.s_byte = key_file ? key_file : cert_file;
+    dtls_pki.pki_key.key.define.ca.s_byte = ca_file;
+    dtls_pki.pki_key.key.define.public_cert_def = COAP_PKI_KEY_DEF_ENGINE;
+    dtls_pki.pki_key.key.define.private_key_def = COAP_PKI_KEY_DEF_ENGINE;
+    dtls_pki.pki_key.key.define.ca_def = COAP_PKI_KEY_DEF_ENGINE;
+    dtls_pki.pki_key.key.define.user_pin = pkcs11_pin;
+  } else if ((key_file && strncasecmp(key_file, "pkcs11:", 7) == 0) ||
+             (cert_file && strncasecmp(cert_file, "pkcs11:", 7) == 0) ||
+             (ca_file && strncasecmp(ca_file, "pkcs11:", 7) == 0)) {
     dtls_pki.pki_key.key_type = COAP_PKI_KEY_PKCS11;
     dtls_pki.pki_key.key.pkcs11.public_cert = cert_file;
     dtls_pki.pki_key.key.pkcs11.private_key = key_file ?
@@ -1411,16 +1477,21 @@ setup_psk(const uint8_t *identity,
   static coap_dtls_cpsk_t dtls_psk;
   static char client_sni[256];
 
-  memset(client_sni, 0, sizeof(client_sni));
   memset(&dtls_psk, 0, sizeof(dtls_psk));
   dtls_psk.version = COAP_DTLS_CPSK_SETUP_VERSION;
-  dtls_psk.validate_ih_call_back = verify_ih_callback;
+  dtls_psk.ec_jpake = ec_jpake;
+  dtls_psk.use_cid = setup_cid;
+  if (valid_ihs.count) {
+    dtls_psk.validate_ih_call_back = verify_ih_callback;
+  }
   dtls_psk.ih_call_back_arg = &dtls_psk.psk_info;
-  if (uri.host.length)
-    memcpy(client_sni, uri.host.s,
-           min(uri.host.length, sizeof(client_sni) - 1));
-  else
-    memcpy(client_sni, "localhost", 9);
+  if (proxy.host.length) {
+    snprintf(client_sni, sizeof(client_sni), "%*.*s", (int)proxy.host.length, (int)proxy.host.length,
+             proxy.host.s);
+  } else {
+    snprintf(client_sni, sizeof(client_sni), "%*.*s", (int)uri.host.length, (int)uri.host.length,
+             uri.host.s);
+  }
   dtls_psk.client_sni = client_sni;
   dtls_psk.psk_info.identity.s = identity;
   dtls_psk.psk_info.identity.length = identity_len;
@@ -1503,62 +1574,60 @@ get_session(coap_context_t *ctx,
   coap_session_t *session = NULL;
 
   is_mcast = coap_is_mcast(dst);
-  if (local_addr || coap_is_af_unix(dst)) {
-    if (coap_is_af_unix(dst)) {
-      coap_address_t bind_addr;
+  if (coap_is_af_unix(dst)) {
+    coap_address_t bind_addr;
 
-      if (local_addr) {
-        if (!coap_address_set_unix_domain(&bind_addr,
-                                          (const uint8_t *)local_addr,
-                                          strlen(local_addr))) {
-          fprintf(stderr, "coap_address_set_unix_domain: %s: failed\n",
-                  local_addr);
-          return NULL;
-        }
-      } else {
-        char buf[COAP_UNIX_PATH_MAX];
-
-        /* Need a unique address */
-        snprintf(buf, COAP_UNIX_PATH_MAX,
-                 "/tmp/coap-client.%d", (int)getpid());
-        if (!coap_address_set_unix_domain(&bind_addr, (const uint8_t *)buf,
-                                          strlen(buf))) {
-          fprintf(stderr, "coap_address_set_unix_domain: %s: failed\n",
-                  buf);
-          remove(buf);
-          return NULL;
-        }
-        (void)remove(buf);
-      }
-      session = open_session(ctx, proto, &bind_addr, dst,
-                             identity, identity_len, key, key_len);
-    } else {
-      coap_addr_info_t *info_list = NULL;
-      coap_addr_info_t *info;
-      coap_str_const_t local;
-      uint16_t port = local_port ? atoi(local_port) : 0;
-
-      local.s = (const uint8_t *)local_addr;
-      local.length = strlen(local_addr);
-      /* resolve local address where data should be sent from */
-      info_list = coap_resolve_address_info(&local, port, port, port, port,
-                                            AI_PASSIVE | AI_NUMERICHOST | AI_NUMERICSERV | AI_ALL,
-                                            1 << scheme,
-                                            COAP_RESOLVE_TYPE_LOCAL);
-      if (!info_list) {
-        fprintf(stderr, "coap_resolve_address_info: %s: failed\n", local_addr);
+    if (local_addr) {
+      if (!coap_address_set_unix_domain(&bind_addr,
+                                        (const uint8_t *)local_addr,
+                                        strlen(local_addr))) {
+        fprintf(stderr, "coap_address_set_unix_domain: %s: failed\n",
+                local_addr);
         return NULL;
       }
+    } else {
+      char buf[COAP_UNIX_PATH_MAX];
 
-      /* iterate through results until success */
-      for (info = info_list; info != NULL; info = info->next) {
-        session = open_session(ctx, proto, &info->addr, dst,
-                               identity, identity_len, key, key_len);
-        if (session)
-          break;
+      /* Need a unique address */
+      snprintf(buf, COAP_UNIX_PATH_MAX,
+               "/tmp/coap-client.%d", (int)getpid());
+      if (!coap_address_set_unix_domain(&bind_addr, (const uint8_t *)buf,
+                                        strlen(buf))) {
+        fprintf(stderr, "coap_address_set_unix_domain: %s: failed\n",
+                buf);
+        remove(buf);
+        return NULL;
       }
-      coap_free_address_info(info_list);
+      (void)remove(buf);
     }
+    session = open_session(ctx, proto, &bind_addr, dst,
+                           identity, identity_len, key, key_len);
+  } else if (local_addr) {
+    coap_addr_info_t *info_list = NULL;
+    coap_addr_info_t *info;
+    coap_str_const_t local;
+    uint16_t port = local_port ? atoi(local_port) : 0;
+
+    local.s = (const uint8_t *)local_addr;
+    local.length = strlen(local_addr);
+    /* resolve local address where data should be sent from */
+    info_list = coap_resolve_address_info(&local, port, port, port, port,
+                                          AI_PASSIVE | AI_NUMERICHOST | AI_NUMERICSERV | AI_ALL,
+                                          1 << scheme,
+                                          COAP_RESOLVE_TYPE_LOCAL);
+    if (!info_list) {
+      fprintf(stderr, "coap_resolve_address_info: %s: failed\n", local_addr);
+      return NULL;
+    }
+
+    /* iterate through results until success */
+    for (info = info_list; info != NULL; info = info->next) {
+      session = open_session(ctx, proto, &info->addr, dst,
+                             identity, identity_len, key, key_len);
+      if (session)
+        break;
+    }
+    coap_free_address_info(info_list);
   } else if (local_port) {
     coap_address_t bind_addr;
 
@@ -1600,8 +1669,7 @@ main(int argc, char **argv) {
   uint8_t *data = NULL;
   size_t data_len = 0;
   coap_addr_info_t *info_list = NULL;
-#define BUFSIZE 100
-  static unsigned char buf[BUFSIZE];
+  uint8_t cid_every = 0;
 #ifndef _WIN32
   struct sigaction sa;
 #endif
@@ -1610,14 +1678,15 @@ main(int argc, char **argv) {
   coap_startup();
 
   while ((opt = getopt(argc, argv,
-                       "a:b:c:e:f:h:j:k:l:m:no:p:rs:t:u:v:wA:B:C:E:G:H:J:K:L:M:NO:P:R:T:UV:X:")) != -1) {
+                       "a:b:c:d:e:f:h:j:k:l:m:no:p:q:rs:t:u:v:wA:B:C:E:G:H:J:K:L:M:NO:P:R:T:UV:X:2")) != -1) {
     switch (opt) {
     case 'a':
       strncpy(node_str, optarg, NI_MAXHOST - 1);
       node_str[NI_MAXHOST - 1] = '\0';
       break;
     case 'b':
-      cmdline_blocksize(optarg);
+      if (!cmdline_blocksize(optarg))
+        goto failed;
       break;
     case 'B':
       wait_seconds = atoi(optarg);
@@ -1630,6 +1699,10 @@ main(int argc, char **argv) {
       break;
     case 'R':
       root_ca_file = optarg;
+      break;
+    case 'd':
+      cid_every = atoi(optarg);
+      setup_cid = 1;
       break;
     case 'e':
       if (!cmdline_input(optarg, &payload))
@@ -1758,6 +1831,13 @@ main(int argc, char **argv) {
         goto failed;
       }
       break;
+    case 'q':
+      tls_engine_conf = optarg;
+      doing_tls_engine = 1;
+      break;
+    case '2':
+      ec_jpake = 1;
+      break;
     default:
       usage(argv[0], LIBCOAP_PACKAGE_VERSION);
       goto failed;
@@ -1825,6 +1905,11 @@ main(int argc, char **argv) {
     goto failed;
   }
 
+  if (doing_tls_engine) {
+    if (!cmdline_tls_engine(tls_engine_conf))
+      goto failed;
+  }
+
   if (doing_oscore) {
     if (get_oscore_conf() == NULL)
       goto failed;
@@ -1839,6 +1924,12 @@ main(int argc, char **argv) {
   coap_register_nack_handler(ctx, nack_handler);
   if (the_token.length > COAP_TOKEN_DEFAULT_MAX)
     coap_context_set_max_token_size(ctx, the_token.length);
+  if (cid_every) {
+    if (!coap_context_set_cid_tuple_change(ctx, cid_every)) {
+      coap_log_warn("coap_context_set_cid_tuple_change: "
+                    "Unable to set CID tuple change\n");
+    }
+  }
 
   session = get_session(ctx,
                         node_str[0] ? node_str : NULL,
@@ -1865,10 +1956,9 @@ main(int argc, char **argv) {
   coap_session_init_token(session, the_token.length, the_token.s);
 
   /* Convert provided uri into CoAP options */
-  if (coap_uri_into_options(&uri, !uri_host_option && !proxy.host.length ?
-                            &dst : NULL,
-                            &optlist, create_uri_opts,
-                            buf, sizeof(buf)) < 0) {
+  if (!coap_uri_into_optlist(proxy.host.length ? &proxy : &uri, !uri_host_option ?
+                             &dst : NULL,
+                             &optlist, create_uri_opts)) {
     coap_log_err("Failed to create options for URI\n");
     goto failed;
   }

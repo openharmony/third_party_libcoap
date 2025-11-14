@@ -1,6 +1,6 @@
 # man/Makefile.am
 #
-# Copyright (C) 2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+# Copyright (C) 2018-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
 #
 # This file is part of the CoAP C library libcoap. Please see README and
 # COPYING for terms of use.
@@ -32,6 +32,7 @@ TXT3 = coap_address.txt \
 	coap_init.txt \
 	coap_io.txt \
 	coap_keepalive.txt \
+	coap_locking.txt \
 	coap_logging.txt \
 	coap_lwip.txt \
 	coap_observe.txt \
@@ -39,10 +40,12 @@ TXT3 = coap_address.txt \
 	coap_pdu_access.txt \
 	coap_pdu_setup.txt \
 	coap_persist.txt \
+	coap_proxy.txt \
 	coap_recovery.txt \
 	coap_resource.txt \
 	coap_session.txt \
 	coap_string.txt \
+	coap_supported.txt \
 	coap_tls_library.txt \
 	coap_uri.txt \
 	coap_websockets.txt
@@ -54,7 +57,8 @@ man3_MANS = $(MAN3)
 TXT5 = coap-client.txt \
        coap-rd.txt \
        coap-server.txt \
-       coap-oscore-conf.txt
+       coap-oscore-conf.txt \
+       coap-tls-engine-conf.txt
 
 MAN5 = $(TXT5:%.txt=%.5)
 
@@ -68,12 +72,12 @@ man7_MANS = $(MAN7)
 
 .txt.3:
 	$(A2X) --doctype manpage --format manpage $<
-	@NEWLIST=`${SED} -ne '/^NAME/,/^SYNOPSIS/p;/^SYNOPSIS/q' $< | ${SED} 's/^- /\\\\\\\- /g' | egrep -v 'NAME|----|SYNOPSIS|^\$$' | tr '\n' ' '` ;\
+	@NEWLIST=`${SED} -ne '/^NAME/,/^SYNOPSIS/p;/^SYNOPSIS/q' $< | ${SED} 's/^- /\\\\\\\- /g' | ${EGREP} -v 'NAME|----|SYNOPSIS|^\$$' | tr '\n' ' '` ;\
 	NAME=`echo $< | ${SED} -ne 's/^\(coap_[a-zA-Z_0-9]\+\).*$$/\1.3/p'` ;\
 	${SED} -i '/.SH "NAME"/{n;d;}' $${NAME} ;\
 	${SED} -i "/\.SH \"NAME\"/a $${NEWLIST}" $${NAME}
 	$(A2X) --doctype manpage --format xhtml $<
-	@NEWLIST=`${SED} -ne '/^NAME/,/^SYNOPSIS/p;/^SYNOPSIS/q' $< | ${SED} 's^/^\\\\/^g' | egrep -v 'NAME|----|SYNOPSIS|^\$$' | tr '\n' ' '` ;\
+	@NEWLIST=`${SED} -ne '/^NAME/,/^SYNOPSIS/p;/^SYNOPSIS/q' $< | ${SED} 's^/^\\\\/^g' | ${EGREP} -v 'NAME|----|SYNOPSIS|^\$$' | tr '\n' ' '` ;\
 	NAME=`echo $< | ${SED} -ne 's/^\(coap_[a-zA-Z_0-9]\+\).*$$/\1.html/p'` ;\
 	${SED} -i "s^Name</h2><p>.*</p></div>^Name</h2><p>$${NEWLIST}</p></div>^" $${NAME}
 
@@ -102,6 +106,7 @@ A2X_EXTRA_PAGES_5 = @DOLLAR_SIGN@(shell for fil in $(TXT5) ; do sed -ne '/^NAME/
 # Then all the alternative names as well as the extras defined below need
 # to be cleaned up in a 'make unistall'.
 install-man: install-man3 install-man5 install-man7
+	@echo ".so man3/coap_address.3" > coap_resolve_address_info.3
 	@echo ".so man3/coap_address.3" > coap_free_address_info.3
 	@echo ".so man3/coap_address.3" > coap_sockaddr_un.3
 	@echo ".so man3/coap_address.3" > coap_address_set_unix_domain.3
@@ -113,15 +118,25 @@ install-man: install-man3 install-man5 install-man7
 	@echo ".so man3/coap_cache.3" > coap_cache_get_app_data.3
 	@echo ".so man3/coap_cache.3" > coap_cache_set_app_data.3
 	@echo ".so man3/coap_context.3" > coap_context_get_session_timeout.3
-	@echo ".so man3/coap_context.3" > coap_context_set_csm_timeout.3
-	@echo ".so man3/coap_context.3" > coap_context_get_csm_timeout.3
+	@echo ".so man3/coap_context.3" > coap_context_set_csm_timeout_ms.3
+	@echo ".so man3/coap_context.3" > coap_context_get_csm_timeout_ms.3
 	@echo ".so man3/coap_context.3" > coap_context_set_max_token_size.3
+	@echo ".so man3/coap_context.3" > coap_context_set_app_data.3
+	@echo ".so man3/coap_context.3" > coap_context_get_app_data.3
+	@echo ".so man3/coap_context.3" > coap_context_set_cid_tuple_change.3
+	@echo ".so man3/coap_deprecated.3" > coap_set_app_data.3
+	@echo ".so man3/coap_deprecated.3" > coap_get_app_data.3
+	@echo ".so man3/coap_deprecated.3" > coap_option_setb.3
+	@echo ".so man3/coap_deprecated.3" > coap_read.3
 	@echo ".so man3/coap_deprecated.3" > coap_register_handler.3
 	@echo ".so man3/coap_deprecated.3" > coap_resource_set_dirty.3
 	@echo ".so man3/coap_deprecated.3" > coap_run_once.3
 	@echo ".so man3/coap_deprecated.3" > coap_set_event_handler.3
 	@echo ".so man3/coap_deprecated.3" > coap_write.3
+	@echo ".so man3/coap_io.3" > coap_io_pending.3
 	@echo ".so man3/coap_io.3" > coap_can_exit.3
+	@echo ".so man3/coap_locking.3" > coap_lock_callback_ret_release.3
+	@echo ".so man3/coap_locking.3" > coap_lock_invert.3
 	@echo ".so man3/coap_logging.3" > coap_log_info.3
 	@echo ".so man3/coap_logging.3" > coap_log_debug.3
 	@echo ".so man3/coap_logging.3" > coap_log_oscore.3
@@ -132,6 +147,7 @@ install-man: install-man3 install-man5 install-man7
 	@echo ".so man3/coap_logging.3" > coap_dtls_log.3
 	@echo ".so man3/coap_logging.3" > coap_dtls_get_log_level.3
 	@echo ".so man3/coap_logging.3" > coap_dtls_set_log_level.3
+	@echo ".so man3/coap_logging.3" > coap_log_level_desc.3
 	@echo ".so man3/coap_logging.3" > coap_package_name.3
 	@echo ".so man3/coap_logging.3" > coap_package_version.3
 	@echo ".so man3/coap_logging.3" > coap_package_build.3
@@ -141,7 +157,6 @@ install-man: install-man3 install-man5 install-man7
 	@echo ".so man3/coap_logging.3" > coap_session_str.3
 	@echo ".so man3/coap_logging.3" > coap_print_addr.3
 	@echo ".so man3/coap_logging.3" > coap_print_ip_addr.3
-	@echo ".so man3/coap_oscore.3" > coap_context_oscore_server.3
 	@echo ".so man3/coap_pdu_access.3" > coap_option_filter_set.3
 	@echo ".so man3/coap_pdu_access.3" > coap_option_filter_unset.3
 	@echo ".so man3/coap_pdu_access.3" > coap_option_iterator_init.3
@@ -160,7 +175,9 @@ install-man: install-man3 install-man5 install-man7
 	@echo ".so man3/coap_pdu_setup.3" > coap_add_data.3
 	@echo ".so man3/coap_pdu_setup.3" > coap_add_data_blocked_response.3
 	@echo ".so man3/coap_pdu_setup.3" > coap_send.3
+	@echo ".so man3/coap_pdu_setup.3" > coap_path_into_optlist.3
 	@echo ".so man3/coap_pdu_setup.3" > coap_split_path.3
+	@echo ".so man3/coap_pdu_setup.3" > coap_query_into_optlist.3
 	@echo ".so man3/coap_pdu_setup.3" > coap_split_query.3
 	@echo ".so man3/coap_pdu_setup.3" > coap_pdu_set_mid.3
 	@echo ".so man3/coap_pdu_setup.3" > coap_pdu_set_code.3
@@ -178,11 +195,14 @@ install-man: install-man3 install-man5 install-man7
 	@echo ".so man3/coap_recovery.3" > coap_session_set_probing_rate.3
 	@echo ".so man3/coap_recovery.3" > coap_session_get_probing_rate.3
 	@echo ".so man3/coap_recovery.3" > coap_debug_set_packet_loss.3
+	@echo ".so man3/coap_resource.3" > coap_delete_resource.3
 	@echo ".so man3/coap_resource.3" > coap_resource_set_mode.3
 	@echo ".so man3/coap_resource.3" > coap_resource_set_userdata.3
 	@echo ".so man3/coap_resource.3" > coap_resource_get_userdata.3
 	@echo ".so man3/coap_resource.3" > coap_resource_release_userdata_handler.3
 	@echo ".so man3/coap_resource.3" > coap_resource_get_uri_path.3
+	@echo ".so man3/coap_resource.3" > coap_get_resource_from_uri_path.3
+	@echo ".so man3/coap_resource.3" > coap_print_wellknown.3
 	@echo ".so man3/coap_session.3" > coap_session_get_addr_remote.3
 	@echo ".so man3/coap_session.3" > coap_session_get_context.3
 	@echo ".so man3/coap_session.3" > coap_session_get_ifindex.3
@@ -196,9 +216,19 @@ install-man: install-man3 install-man5 install-man7
 	@echo ".so man3/coap_string.3" > coap_make_str_const.3
 	@echo ".so man3/coap_string.3" > coap_string_equal.3
 	@echo ".so man3/coap_string.3" > coap_binary_equal.3
-	@echo ".so man3/coap_tls_library.3" > coap_string_tls_support.3
-	@echo ".so man3/coap_tls_library.3" > coap_string_tls_version.3
-	@echo ".so man3/coap_tls_library.3" > coap_show_tls_version.3
+	@echo ".so man3/coap_supported.3" > coap_dtls_rpk_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_epoll_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_ipv4_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_ipv6_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_observe_persist_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_oscore_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_proxy_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_server_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_tcp_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_threadsafe_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_tls_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_ws_is_supported.3
+	@echo ".so man3/coap_supported.3" > coap_wss_is_supported.3
 	$(INSTALL_DATA) $(A2X_EXTRA_PAGES_3) "$(DESTDIR)$(man3dir)"
 	$(INSTALL_DATA) $(A2X_EXTRA_PAGES_5) "$(DESTDIR)$(man5dir)"
 

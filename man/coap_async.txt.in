@@ -11,7 +11,6 @@ coap_async(3)
 NAME
 ----
 coap_async,
-coap_async_is_supported,
 coap_register_async,
 coap_async_trigger,
 coap_async_set_delay,
@@ -24,8 +23,6 @@ coap_async_get_app_data
 SYNOPSIS
 --------
 *#include <coap@LIBCOAP_API_VERSION@/coap.h>*
-
-*int coap_async_is_supported(void);*
 
 *coap_async_t *coap_register_async(coap_session_t *_session_,
 const coap_pdu_t *_request_, coap_tick_t _delay_);*
@@ -45,7 +42,8 @@ coap_bin_const_t _token_);*
 
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -73,11 +71,6 @@ when received, so no need to use the async support.
 
 FUNCTIONS
 ---------
-
-*Function: coap_async_is_supported()*
-
-The *coap_async_is_supported*() function is used to determine if there is
-async support or not compiled into libcoap.
 
 *Function: coap_register_async()*
 
@@ -129,8 +122,6 @@ application data from the  _async_ definition.
 RETURN VALUES
 -------------
 
-*coap_async_is_supported*() returns 1 if support is available, 0 otherwise.
-
 *coap_register_async*() and *coap_find_async*() return a pointer to an async
 definition or NULL if there is an error.
 
@@ -150,10 +141,10 @@ EXAMPLES
  */
 static void
 hnd_get_with_delay(coap_session_t *session,
-              coap_resource_t *resource,
-              coap_pdu_t *request,
-              coap_string_t *query,
-              coap_pdu_t *response) {
+                   coap_resource_t *resource,
+                   coap_pdu_t *request,
+                   coap_string_t *query,
+                   coap_pdu_t *response) {
   unsigned long delay = 5;
   size_t size;
   coap_async_t *async;
@@ -203,12 +194,11 @@ hnd_get_with_delay(coap_session_t *session,
 
   /* async is automatically removed by libcoap on return from this handler */
 }
-
 ----
 
 SEE ALSO
 --------
-*coap_handler*(3)
+*coap_handler*(3) and *coap_supported*(3)
 
 FURTHER INFORMATION
 -------------------
@@ -220,9 +210,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

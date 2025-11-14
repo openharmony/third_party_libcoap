@@ -52,7 +52,8 @@ size_t _nevents_)*;
 
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -373,7 +374,7 @@ main(int argc, char *argv[]) {
     fd_set readfds = m_readfds;
     int result;
     /* Wait until any i/o takes place */
-    result = select (nfds, &readfds, NULL, NULL, NULL);
+    result = select(nfds, &readfds, NULL, NULL, NULL);
     if (result == -1) {
       if (errno != EAGAIN) {
         coap_log_debug("select: %s (%d)\n", coap_socket_strerror(), errno);
@@ -472,8 +473,7 @@ main(int argc, char *argv[]) {
           /* There is an internal issue */
           break;
         }
-      }
-      else {
+      } else {
         /* Process other events */
       }
     }
@@ -495,7 +495,7 @@ main(int argc, char *argv[]) {
 
 SEE ALSO
 --------
-*coap_block*(3), *coap_context*(3) and *coap_init*(3)
+*coap_block*(3), *coap_context*(3), *coap_init*(3) and *coap_supported*(3)
 
 FURTHER INFORMATION
 -------------------
@@ -507,9 +507,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

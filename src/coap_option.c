@@ -1,7 +1,7 @@
 /*
  * coap_option.c -- helpers for handling options in CoAP PDUs
  *
- * Copyright (C) 2010-2013,2022-2023 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2010-2013,2022-2024 Olaf Bergmann <bergmann@tzi.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -14,7 +14,7 @@
  * @brief CoAP option handling functions
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -560,11 +560,11 @@ coap_add_optlist_pdu(coap_pdu_t *pdu, coap_optlist_t **options) {
     LL_SORT((*options), order_opts);
 
     LL_FOREACH((*options), opt) {
-      coap_add_option_internal(pdu, opt->number, opt->length, opt->data);
+      if (!coap_add_option_internal(pdu, opt->number, opt->length, opt->data))
+        return 0;
     }
-    return 1;
   }
-  return 0;
+  return 1;
 }
 
 int

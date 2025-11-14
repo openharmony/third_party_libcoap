@@ -2,7 +2,7 @@
  * server-coap.c -- LwIP example
  *
  * Copyright (C) 2013-2016 Christian Amsüss <chrysn@fsfe.org>
- * Copyright (C) 2018-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2018-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -11,6 +11,7 @@
  */
 
 #include "coap_config.h"
+
 #include <coap3/coap.h>
 #include "server-coap.h"
 
@@ -41,8 +42,7 @@ hnd_get_time(coap_resource_t *resource, coap_session_t  *session,
    * when query ?ticks is given. */
 
   /* if my_clock_base was deleted, we pretend to have no such resource */
-  response->code =
-      my_clock_base ? COAP_RESPONSE_CODE(205) : COAP_RESPONSE_CODE(404);
+  coap_pdu_set_code(response, my_clock_base ? COAP_RESPONSE_CODE(205) : COAP_RESPONSE_CODE(404));
 
   if (my_clock_base)
     coap_add_option(response, COAP_OPTION_CONTENT_FORMAT,
@@ -219,5 +219,4 @@ server_coap_poll(void) {
     last_time = time_now;
     coap_resource_notify_observers(time_resource, NULL);
   }
-  coap_check_notify(main_coap_context);
 }

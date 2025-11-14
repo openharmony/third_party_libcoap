@@ -45,7 +45,8 @@ uint32_t _start_observe_no_);*
 
 For specific (D)TLS library support, link with
 *-lcoap-@LIBCOAP_API_VERSION@-notls*, *-lcoap-@LIBCOAP_API_VERSION@-gnutls*,
-*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*
+*-lcoap-@LIBCOAP_API_VERSION@-openssl*, *-lcoap-@LIBCOAP_API_VERSION@-mbedtls*,
+*-lcoap-@LIBCOAP_API_VERSION@-wolfssl*
 or *-lcoap-@LIBCOAP_API_VERSION@-tinydtls*.   Otherwise, link with
 *-lcoap-@LIBCOAP_API_VERSION@* to get the default (D)TLS library support.
 
@@ -116,6 +117,24 @@ The _observe_added_ callback function prototype, called when a client
 subscribes to a resource for observation, is defined as:
 [source, c]
 ----
+/**
+ * Callback handler definition called when a new observe has been set up,
+ * as defined in coap_persist_track_funcs().
+ *
+ * @param session The current session.
+ * @param observe_key The pointer to the subscription.
+ * @param e_proto The CoAP protocol in use for the session / endpoint.
+ * @param e_listen_addr The IP/port that the endpoint is listening on.
+ * @param s_addr_info Local / Remote IP addresses. ports etc. of session.
+ * @param raw_packet L7 packet as seen on the wire (could be concatenated if
+ *                   Block1 FETCH is being used).
+ * @param oscore_info Has OSCORE information if OSCORE is protecting the
+ *                    session or NULL if OSCORE is not in use.
+ * @param user_data Application provided information from
+ *                  coap_persist_track_funcs().
+ *
+ * @return @c 1 if success else @c 0.
+ */
 typedef int (*coap_observe_added_t)(coap_session_t *session,
                                     coap_subscription_t *observe_key,
                                     coap_proto_t e_proto,
@@ -130,6 +149,17 @@ The _observe_deleted_ callback function prototype, called when a client
 removes the subscription to a resource for observation, is defined as:
 [source, c]
 ----
+/**
+ * Callback handler definition called when an observe is being removed,
+ * as defined in coap_persist_track_funcs().
+ *
+ * @param session The current session.
+ * @param observe_key The pointer to the subscription.
+ * @param user_data Application provided information from
+ *                  coap_persist_track_funcs().
+ *
+ * @return @c 1 if success else @c 0.
+ */
 typedef int (*coap_observe_deleted_t)(coap_session_t *session,
                                       coap_subscription_t *observe_key,
                                       void *user_data);
@@ -139,6 +169,21 @@ The _track_observe_value_ callback function prototype, called when a new
 unsolicited observe response is went (every _save_freq_), is defined as:
 [source, c]
 ----
+/**
+ * Callback handler definition called when an observe unsolicited response is
+ * being sent, as defined in coap_persist_track_funcs().
+ *
+ * Note: This will only get called every save_freq as defined by
+ * coap_persist_track_funcs().
+ *
+ * @param context The current CoAP context.
+ * @param resource_name The uri path name of the resource.
+ * @param observe_num The current observe value just sent.
+ * @param user_data Application provided information from
+ *                  coap_persist_track_funcs().
+ *
+ * @return @c 1 if success else @c 0.
+ */
 typedef int (*coap_track_observe_value_t)(coap_context_t *context,
                                           coap_str_const_t *resource_name,
                                           uint32_t observe_num,
@@ -150,6 +195,19 @@ resource is created from a request that is calling the resource unknown
 handler, is defined as:
 [source, c]
 ----
+/**
+ * Callback handler definition called when a dynamic resource is getting
+ * created, as defined in coap_persist_track_funcs().
+ *
+ * @param session The current CoAP session.
+ * @param resource_name The uri path name of the resource.
+ * @param raw_packet L7 packet as seen on the wire (could be concatenated if
+ *                   Block1 PUT/POST/FETCH used to create resource).
+ * @param user_data Application provided information from
+ *                  coap_persist_track_funcs().
+ *
+ * @return @c 1 if success else @c 0.
+ */
 typedef int (*coap_dyn_resource_added_t)(coap_session_t *session,
                                          coap_str_const_t *resource_name,
                                          coap_bin_const_t *raw_packet,
@@ -160,6 +218,20 @@ The _resource_deleted_ callback function prototype, called whenever a
 resource is deleted, is defined as:
 [source, c]
 ----
+/**
+ * Callback handler definition called when resource is removed,
+ * as defined in coap_persist_track_funcs().
+ *
+ * This will remove any dynamic resources that are being tracked as well
+ * as any observe value tracking.
+ *
+ * @param context The current CoAP context.
+ * @param resource_name The uri path name of the resource.
+ * @param user_data Application provided information from
+ *                  coap_persist_track_funcs().
+ *
+ * @return @c 1 if success else @c 0.
+ */
 typedef int (*coap_resource_deleted_t)(coap_context_t *context,
                                        coap_str_const_t *resource_name,
                                        void *user_data);
@@ -212,8 +284,8 @@ coap_resource_t *time_resource = NULL;
 
 static void
 hnd_get_time(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
-
+             const coap_pdu_t *request, const coap_string_t *query,
+             coap_pdu_t *response) {
   unsigned char buf[40];
   size_t len;
   time_t now;
@@ -231,8 +303,7 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
   if (query != NULL && coap_string_equal(query, coap_make_str_const("secs"))) {
     /* Output secs since Jan 1 1970 */
     len = snprintf((char *)buf, sizeof(buf), "%lu", now);
-  }
-  else {
+  } else {
     /* Output human-readable time */
     struct tm *tmp;
     tmp = gmtime(&now);
@@ -265,8 +336,8 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
 
 static void
 hnd_get_generic(coap_resource_t *resource, coap_session_t *session,
-const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
-
+                const coap_pdu_t *request, const coap_string_t *query,
+                coap_pdu_t *response) {
   coap_str_const_t *uri_path = coap_resource_get_uri_path(resource);
 
   if (!uri_path) {
@@ -290,9 +361,7 @@ const coap_pdu_t *request, const coap_string_t *query, coap_pdu_t *response) {
 /* Initialize generic GET handler */
 
 static void
-init_resources(coap_context_t *ctx)
-{
-
+init_resources(coap_context_t *ctx) {
   coap_resource_t *r;
 
   /* Create a resource to return return or update time */
@@ -324,7 +393,7 @@ main(int argc, char *argv[]) {
   /* Initialize libcoap library */
   coap_startup();
 
-  memset (&tv_last, 0, sizeof(tv_last));
+  memset(&tv_last, 0, sizeof(tv_last));
 
   /* Create the libcoap context */
   ctx = coap_new_context(NULL);
@@ -355,10 +424,10 @@ main(int argc, char *argv[]) {
   wait_ms = COAP_RESOURCE_CHECK_TIME * 1000;
 
   while (1) {
-    int result = coap_io_process( ctx, wait_ms );
-    if ( result < 0 ) {
+    int result = coap_io_process(ctx, wait_ms);
+    if (result < 0) {
       break;
-    } else if ( result && (unsigned)result < wait_ms ) {
+    } else if (result && (unsigned)result < wait_ms) {
       /* decrement if there is a result wait time returned */
       wait_ms -= result;
     } else {
@@ -372,7 +441,7 @@ main(int argc, char *argv[]) {
     }
     if (time_resource) {
       struct timeval tv_now;
-      if (gettimeofday (&tv_now, NULL) == 0) {
+      if (gettimeofday(&tv_now, NULL) == 0) {
         if (tv_last.tv_sec != tv_now.tv_sec) {
           /* Happens once per second */
           tv_last = tv_now;
@@ -414,9 +483,11 @@ for further information.
 
 BUGS
 ----
-Please report bugs on the mailing list for libcoap:
-libcoap-developers@lists.sourceforge.net or raise an issue on GitHub at
-https://github.com/obgm/libcoap/issues
+Please raise an issue on GitHub at
+https://github.com/obgm/libcoap/issues to report any bugs.
+
+Please raise a Pull Request at https://github.com/obgm/libcoap/pulls
+for any fixes.
 
 AUTHORS
 -------

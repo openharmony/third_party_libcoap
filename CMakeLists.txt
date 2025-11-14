@@ -1,7 +1,7 @@
 # CMakeLists.txt for libcoap
 #
 # Copyright (C) 2020 Carlos Gomes Martinho <carlos.gomes_martinho@siemens.com>
-# Copyright (C) 2020-2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+# Copyright (C) 2020-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
@@ -12,18 +12,22 @@ cmake_minimum_required(VERSION 3.10)
 
 project(
   libcoap
-  VERSION 4.3.4
+  VERSION 4.3.5
   LANGUAGES CXX C)
 
 set(LIBCOAP_API_VERSION 3)
-set(LIBCOAP_ABI_VERSION 3.1.1)
+set(LIBCOAP_ABI_VERSION 3.2.0)
 
 set(COAP_LIBRARY_NAME "coap-${LIBCOAP_API_VERSION}")
 
+if(NOT ZEPHYR_BASE)
 option(
   BUILD_SHARED_LIBS
   "Build shared libs"
   OFF)
+else()
+  # provided by the zephyr build system
+endif()
 
 #
 # global compiler options
@@ -84,6 +88,7 @@ set_target_properties(${COAP_LIBRARY_NAME} PROPERTIES VERSION ${LIBCOAP_ABI_VERS
 # options to tweak the library
 #
 
+if(NOT ZEPHYR_BASE)
 option(
   ENABLE_DTLS
   "enable building with DTLS support"
@@ -94,17 +99,18 @@ set(DTLS_BACKEND
       STRING
       "\
 Name of the dtls backend, only relevant if `ENABLE_DTLS` is ON which is default. \
-Possible values: default, gnutls, openssl, tinydtls and mbedtls. \
+Possible values: default, gnutls, openssl, wolfssl, tinydtls and mbedtls. \
 If specified then this library will be searched and if found also used. \
 If not found then the cmake configuration will stop with an error. \
 If not specified, then cmake will try to use the first one found in the following order: \
-gnutls, openssl, tinydtls, mbedtls \
+gnutls, openssl, wolfssl, tinydtls, mbedtls \
     ")
 set_property(
   CACHE DTLS_BACKEND
   PROPERTY STRINGS
            default
            openssl
+           wolfssl
            gnutls
            tinydtls
            mbedtls)
@@ -121,6 +127,10 @@ option(
   "compile with support for server mode code"
   ON)
 option(
+  ENABLE_PROXY_CODE
+  "compile with support for proxy code"
+  ON)
+option(
   ENABLE_OSCORE
   "compile with support for OSCORE"
   ON)
@@ -132,6 +142,14 @@ option(
   WITH_EPOLL
   "compile with epoll support"
   ON)
+option(
+  ENABLE_THREAD_SAFE
+  "enable building with thread safe support"
+  ON)
+option(
+  ENABLE_THREAD_RECURSIVE_LOCK_CHECK
+  "enable building with thread recursive lock detection"
+  OFF)
 option(
   ENABLE_SMALL_STACK
   "enable if the system has small stack size"
@@ -188,7 +206,7 @@ set(MAX_LOGGING_LEVEL
 Only build logging code up to and including the specified logging level (0 - 8)[default=8]]
     ")
 set_property(
-  CACHE DTLS_BACKEND
+  CACHE MAX_LOGGING_LEVEL
   PROPERTY STRINGS
            "0"
            "1"
@@ -199,6 +217,10 @@ set_property(
            "6"
            "7"
            "8")
+
+else() # ! ZEPHYR_BASE
+  # provided by zephyr/CMakeLists.txt and zephyr/Kconfig
+endif() # ! ZEPHYR_BASE
 
 if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 11)
@@ -278,9 +300,11 @@ check_function_exists(random HAVE_RANDOM)
 check_function_exists(if_nametoindex HAVE_IF_NAMETOINDEX)
 
 # check for symbols
-if(WIN32 AND NOT MINGW)
+if(WIN32)
   set(HAVE_STRUCT_CMSGHDR 1)
   message(STATUS "setting HAVE_STRUCT_CMSGHDR")
+elseif(${CMAKE_SYSTEM_NAME} STREQUAL QNX)
+  set(HAVE_STRUCT_CMSGHDR 0)
 else()
   check_symbol_exists(
     CMSG_FIRSTHDR
@@ -302,6 +326,13 @@ else()
   message(STATUS "compiling without server support")
 endif()
 
+if(${ENABLE_PROXY_CODE})
+  set(COAP_PROXY_SUPPORT "1")
+  message(STATUS "compiling with proxy support")
+else()
+  message(STATUS "compiling without proxy support")
+endif()
+
 if(${ENABLE_OSCORE})
   set(COAP_OSCORE_SUPPORT "1")
   message(STATUS "compiling with OSCORE support")
@@ -309,7 +340,7 @@ else()
   message(STATUS "compiling without OSCORE support")
 endif()
 
-if(${ENABLE_WS} AND $(ENABLE_TCP))
+if(${ENABLE_WS} AND ${ENABLE_TCP})
   set(COAP_WS_SUPPORT "1")
   message(STATUS "compiling with WebSockets support")
 else()
@@ -376,12 +407,22 @@ else()
   message(STATUS "compiling without epoll support")
 endif()
 
+if(ENABLE_THREAD_SAFE)
+  set(COAP_THREAD_SAFE "${ENABLE_THREAD_SAFE}")
+  message(STATUS "compiling with thread safe support")
+endif()
+
+if(ENABLE_THREAD_RECURSIVE_LOCK_CHECK)
+  set(COAP_THREAD_RECURSIVE_CHECK "${ENABLE_THREAD_RECURSIVE_LOCK_CHECK}")
+  message(STATUS "compiling with thread recursive lock detection support")
+endif()
+
 if(ENABLE_SMALL_STACK)
-  set(ENABLE_SMALL_STACK "${ENABLE_SMALL_STACK}")
+  set(COAP_CONSTRAINED_STACK "${ENABLE_SMALL_STACK}")
   message(STATUS "compiling with small stack support")
 endif()
 
-if(${MAX_LOGGING_LEVEL} MATCHES "[0-7]")
+if(${MAX_LOGGING_LEVEL} MATCHES "[0-8]")
   set(COAP_MAX_LOGGING_LEVEL ${MAX_LOGGING_LEVEL})
   message(STATUS "compiling with max logging level set to ${MAX_LOGGING_LEVEL}")
 else()
@@ -392,6 +433,7 @@ set(WITH_GNUTLS OFF)
 set(WITH_OPENSSL OFF)
 set(WITH_TINYDTLS OFF)
 set(WITH_MBEDTLS OFF)
+set(WITH_WOLFSSL OFF)
 
 function(compile_tinydtls)
   set(TINYDTLS_SOURCES_DIR ${CMAKE_CURRENT_LIST_DIR}/ext/tinydtls)
@@ -476,33 +518,43 @@ if(ENABLE_DTLS)
         set(COAP_WITH_LIBOPENSSL 1)
       else()
         # openssl not found
-        # libmbedtls (e.g. debian libmbedtls-dev)
-        find_package(MbedTLS)
-        if(MbedTLS_FOUND)
-          set(WITH_MBEDTLS ON)
-          message(STATUS "compiling with mbedtls support")
-          set(COAP_WITH_LIBMBEDTLS 1)
+        # wolfSSL
+        find_package(wolfSSL)
+        if(wolfSSL_FOUND)
+          set(WITH_WOLFSSL ON)
+          message(STATUS "compiling with wolfssl support")
+          set(COAP_WITH_LIBWOLFSSL 1)
         else()
-          # mbedtls not found
-          if(USE_VENDORED_TINYDTLS)
-            compile_tinydtls()
+          # wolfssl not found
+          # libmbedtls (e.g. debian libmbedtls-dev)
+          find_package(MbedTLS)
+          if(MbedTLS_FOUND)
+            set(WITH_MBEDTLS ON)
+            message(STATUS "compiling with mbedtls support")
+            set(COAP_WITH_LIBMBEDTLS 1)
           else()
-            find_package(TinyDTLS)
-            if(TINYDTLS_FOUND)
-
+            # mbedtls not found
+            if(USE_VENDORED_TINYDTLS)
+              compile_tinydtls()
             else()
-              # no cryto lib found
-              message(
-                FATAL_ERROR
-                  "cannot find any cryto lib, either install one or compile without DTLS support"
-              )
+              find_package(TinyDTLS)
+              if(TINYDTLS_FOUND)
+
+              else()
+                # no cryto lib found
+                message(
+                  FATAL_ERROR
+                    "cannot find any cryto lib, either install one or compile without DTLS support"
+                )
+              endif()
+
             endif()
 
-          endif()
+            set(WITH_TINYDTLS ON)
+            message(STATUS "compiling with tinydtls support")
+            set(COAP_WITH_LIBTINYDTLS 1)
 
-          set(WITH_TINYDTLS ON)
-          message(STATUS "compiling with tinydtls support")
-          set(COAP_WITH_LIBTINYDTLS 1)
+          endif()
 
         endif()
 
@@ -516,6 +568,7 @@ if(ENABLE_DTLS)
     set(WITH_TINYDTLS OFF)
     set(WITH_MBEDTLS OFF)
     set(WITH_OPENSSL OFF)
+    set(WITH_WOLFSSL OFF)
 
     if(DTLS_BACKEND
        STREQUAL
@@ -535,6 +588,15 @@ if(ENABLE_DTLS)
       set(WITH_OPENSSL ON)
       message(STATUS "compiling with openssl support")
       set(COAP_WITH_LIBOPENSSL 1)
+    endif()
+
+    if(DTLS_BACKEND
+        STREQUAL
+        "wolfssl")
+      find_package(wolfSSL REQUIRED)
+      set(WITH_WOLFSSL ON)
+      message(STATUS "compiling with wolfssl support")
+      set(COAP_WITH_LIBWOLFSSL 1)
     endif()
 
     if(DTLS_BACKEND
@@ -565,6 +627,16 @@ if(ENABLE_DTLS)
 
   endif()
 
+endif()
+
+if(WITH_WOLFSSL)
+  find_library(WOLFSSL_LIBRARY wolfssl HINTS /usr/local/lib)
+  find_path(WOLFSSL_INCLUDE_DIR wolfssl/wolfcrypt/settings.h HINTS /usr/local/include)
+  if(WOLFSSL_LIBRARY AND WOLFSSL_INCLUDE_DIR)
+    message(STATUS "compiling with wolfssl support")
+  else()
+    message(FATAL_ERROR "WolfSSL not found")
+  endif()
 endif()
 
 execute_process(COMMAND git describe --tags --dirty --always
@@ -608,16 +680,20 @@ message(STATUS "ENABLE_CLIENT_MODE:..............${ENABLE_CLIENT_MODE}")
 message(STATUS "ENABLE_SERVER_MODE:..............${ENABLE_SERVER_MODE}")
 message(STATUS "ENABLE_OSCORE:...................${ENABLE_OSCORE}")
 message(STATUS "ENABLE_ASYNC:....................${ENABLE_ASYNC}")
+message(STATUS "ENABLE_THREAD_SAFE:..............${ENABLE_THREAD_SAFE}")
+message(STATUS "ENABLE_THREAD_RECURSIVE_CHECK....${ENABLE_THREAD_RECURSIVE_LOCK_CHECK}")
 message(STATUS "ENABLE_DOCS:.....................${ENABLE_DOCS}")
 message(STATUS "ENABLE_EXAMPLES:.................${ENABLE_EXAMPLES}")
 message(STATUS "DTLS_BACKEND:....................${DTLS_BACKEND}")
 message(STATUS "WITH_GNUTLS:.....................${WITH_GNUTLS}")
 message(STATUS "WITH_TINYDTLS:...................${WITH_TINYDTLS}")
 message(STATUS "WITH_OPENSSL:....................${WITH_OPENSSL}")
+message(STATUS "WITH_WOLFSSL:....................${WITH_WOLFSSL}")
 message(STATUS "WITH_MBEDTLS:....................${WITH_MBEDTLS}")
 message(STATUS "HAVE_LIBTINYDTLS:................${COAP_WITH_LIBTINYDTLS}")
 message(STATUS "HAVE_LIBGNUTLS:..................${COAP_WITH_LIBGNUTLS}")
 message(STATUS "HAVE_LIBOPENSSL:.................${COAP_WITH_LIBOPENSSL}")
+message(STATUS "HAVE_LIBWOLFSSL:.................${COAP_WITH_LIBWOLFSSL}")
 message(STATUS "HAVE_LIBMBEDTLS:.................${COAP_WITH_LIBMBEDTLS}")
 message(STATUS "WITH_EPOLL:......................${WITH_EPOLL}")
 message(STATUS "WITH_OBSERVE_PERSIST:............${WITH_OBSERVE_PERSIST}")
@@ -641,11 +717,11 @@ else(ENABLE_TCP)
 endif(ENABLE_TCP)
 
 # creates config header file in build directory
-configure_file(${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap.h.in
-               ${CMAKE_CURRENT_BINARY_DIR}/include/coap${LIBCOAP_API_VERSION}/coap.h)
-
 configure_file(${CMAKE_CURRENT_LIST_DIR}/cmake_coap_config.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/coap_config.h)
+
+configure_file(${CMAKE_CURRENT_LIST_DIR}/cmake_coap_defines.h.in
+               ${CMAKE_CURRENT_BINARY_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_defines.h)
 
 configure_file(${CMAKE_CURRENT_LIST_DIR}/tests/test_common.h.in
                ${CMAKE_CURRENT_LIST_DIR}/tests/test_common.h)
@@ -676,20 +752,24 @@ target_sources(
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_oscore.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_pdu.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_prng.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_proxy.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_resource.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_session.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_sha1.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_str.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_subscribe.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_tcp.c
+          ${CMAKE_CURRENT_LIST_DIR}/src/coap_threadsafe.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_time.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_uri.c
           ${CMAKE_CURRENT_LIST_DIR}/src/coap_ws.c
           # no need to parse those files if we do not need them
           $<$<BOOL:${COAP_WITH_LIBOPENSSL}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_openssl.c>
+          $<$<BOOL:${COAP_WITH_LIBWOLFSSL}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_wolfssl.c>
           $<$<BOOL:${COAP_WITH_LIBTINYDTLS}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_tinydtls.c>
           $<$<BOOL:${COAP_WITH_LIBGNUTLS}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_gnutls.c>
           $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${CMAKE_CURRENT_LIST_DIR}/src/coap_mbedtls.c>
-          # needed for OSCORE is enabled
+          # needed for OSCORE if enabled
           $<$<BOOL:${COAP_OSCORE_SUPPORT}>:${CMAKE_CURRENT_LIST_DIR}/src/oscore/oscore.c>
           $<$<BOOL:${COAP_OSCORE_SUPPORT}>:${CMAKE_CURRENT_LIST_DIR}/src/oscore/oscore_cbor.c>
           $<$<BOOL:${COAP_OSCORE_SUPPORT}>:${CMAKE_CURRENT_LIST_DIR}/src/oscore/oscore_context.c>
@@ -712,10 +792,12 @@ target_sources(
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_option.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_pdu.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_prng.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_proxy.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_resource.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_session.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_str.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_subscribe.h
+          ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_supported.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_time.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_uri.h
           ${CMAKE_CURRENT_LIST_DIR}/include/coap${LIBCOAP_API_VERSION}/coap_ws.h)
@@ -728,7 +810,8 @@ target_include_directories(
          $<INSTALL_INTERFACE:include/>
          $<$<AND:$<BOOL:${COAP_WITH_LIBTINYDTLS}>,$<BOOL:${USE_VENDORED_TINYDTLS}>>:${CMAKE_BINARY_DIR}/include/tinydtls>
          $<$<BOOL:${COAP_WITH_LIBGNUTLS}>:${GNUTLS_INCLUDE_DIR}>
-         $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${MBEDTLS_INCLUDE_DIRS}>)
+         $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${MBEDTLS_INCLUDE_DIRS}>
+         $<$<BOOL:${COAP_WITH_LIBWOLFSSL}>:${WOLFSSL_INCLUDE_DIR}>)
 target_link_libraries(
   ${COAP_LIBRARY_NAME}
   PUBLIC $<$<BOOL:${COAP_WITH_LIBOPENSSL}>:OpenSSL::SSL>
@@ -738,11 +821,18 @@ target_link_libraries(
          $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${MBEDTLS_LIBRARY}>
          $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${MBEDX509_LIBRARY}>
          $<$<BOOL:${COAP_WITH_LIBMBEDTLS}>:${MBEDCRYPTO_LIBRARY}>
+         $<$<BOOL:${COAP_WITH_LIBWOLFSSL}>:${WOLFSSL_LIBRARY}>
          $<$<BOOL:${MINGW}>:ws2_32>)
 
 target_compile_options(
   ${COAP_LIBRARY_NAME}
   PUBLIC -DLIBCOAP_PACKAGE_BUILD="${LIBCOAP_PACKAGE_BUILD}")
+
+if(ZEPHYR_BASE)
+target_compile_options(
+  ${COAP_LIBRARY_NAME}
+  PUBLIC -DMBEDTLS_CONFIG_FILE="${CONFIG_MBEDTLS_CFG_FILE}" -I${ZEPHYR_MBEDTLS_CMAKE_DIR}/configs)
+endif()
 
 add_library(
   ${PROJECT_NAME}::${COAP_LIBRARY_NAME}
@@ -873,11 +963,13 @@ install(
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT lib
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT lib)
 
+if(NOT ZEPHYR_BASE)
 install(
   EXPORT ${PROJECT_NAME}Targets
   DESTINATION ${LIBCOAP_CONFIG_INSTALL_DIR}
   NAMESPACE ${PROJECT_NAME}::
   COMPONENT dev)
+endif()
 
 configure_package_config_file(
   cmake/Config.cmake.in
@@ -899,8 +991,6 @@ install(
   COMPONENT dev
   FILES_MATCHING
   PATTERN "*.h"
-  PATTERN "coap.h" EXCLUDE
-  PATTERN "coap_riot.h" EXCLUDE
   PATTERN "*_internal.h" EXCLUDE
   PATTERN "oscore*" EXCLUDE)
 install(

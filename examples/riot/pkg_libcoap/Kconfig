@@ -4,17 +4,12 @@
 # General Public License v2.1. See the file LICENSE in the top level
 # directory for more details.
 #
-menuconfig KCONFIG_USEPKG_LIBCOAP
-    bool "Configure libcoap"
+menu "libcoap"
     depends on USEPKG_LIBCOAP
-    help
-        Configure libcoap package via Kconfig.
-
-if KCONFIG_USEPKG_LIBCOAP
 
 choice LIBCOAP_DEBUG_LEVEL
     bool "Set CoAP debugging level"
-    default LIBCOAP_LOG_DEBUG
+    default LIBCOAP_LOG_INFO
     help
         Set CoAP debugging level
 
@@ -57,6 +52,7 @@ config LIBCOAP_IPV4_SUPPORT
         Enable IPv4 functionality for CoAP.
 
         If this option is disabled, redundant CoAP IPv4 code is removed.
+        [RIOT sock gnrc does not support this]
 
 config LIBCOAP_IPV6_SUPPORT
     bool "Enable IPv6 support within CoAP"
@@ -66,6 +62,8 @@ config LIBCOAP_IPV6_SUPPORT
 
         If this option is disabled, redundant CoAP IPv6 code is removed.
 
+if USEMODULE_SOCK_TCP
+
 config LIBCOAP_TCP_SUPPORT
     bool "Enable TCP support within CoAP"
     default n
@@ -74,14 +72,21 @@ config LIBCOAP_TCP_SUPPORT
         are to be used. Note that RIOT TCP support also needs to be enabled.
 
         If this option is disabled, redundant CoAP TCP code is removed.
+        [RIOT sock gnrc does not support this]
+
+endif # USEMODULE_SOCK_TCP
+
+if USEMODULE_LIBCOAP_OSCORE
 
 config LIBCOAP_OSCORE_SUPPORT
     bool "Enable OSCORE support within CoAP"
-    default n
+    default y
     help
         Enable OSCORE functionality for CoAP.
 
         If this option is disabled, redundant CoAP OSCORE code is removed.
+
+endif # MODULE_LIBCOAP_OSCORE
 
 config LIBCOAP_OBSERVE_PERSIST
     bool "Enable Observe persist support within CoAP"
@@ -115,6 +120,23 @@ config LIBCOAP_ASYNC_SUPPORT
 
         If this option is disabled, redundent CoAP async separate responses code is removed.
 
+config LIBCOAP_THREAD_SAFE
+    bool "Enable thread safe support within CoAP"
+    default n
+    help
+        Enable thread safe support within CoAP.
+
+        If this option is disabled, libcoap is not thread safe,
+
+config LIBCOAP_THREAD_RECURSIVE_CHECK
+    bool "Enable thread recursive lock detection if thread safe support is enabled"
+    depends on LIBCOAP_THREAD_SAFE
+    default n
+    help
+        Enable thread recursive lock detection if thread safe support is enabled.
+
+        If this option is disabled, there is no multi thread recursive detection.
+
 config LIBCOAP_CLIENT_SUPPORT
     bool "Enable Client functionality within CoAP"
     default n
@@ -129,6 +151,16 @@ config LIBCOAP_CLIENT_SUPPORT
         If both this option and LIBCOAP_SERVER_SUPPORT are disabled, then
         both are automatically enabled for backwards compatability.
 
+if LIBCOAP_CLIENT_SUPPORT
+
+config LIBCOAP_MAX_LG_CRCVS
+    int "Max number of client large receives supported"
+    default 1
+    help
+        The maximum number of supported client large receives.
+
+endif # LIBCOAP_CLIENT_SUPPORT
+
 config LIBCOAP_SERVER_SUPPORT
     bool "Enable Server functionality within CoAP"
     default n
@@ -141,21 +173,12 @@ config LIBCOAP_SERVER_SUPPORT
         If both this option and LIBCOAP_CLIENT_SUPPORT are disabled, then
         both are automatically enabled for backwards compatability.
 
-config LIBCOAP_MAX_STRING_SIZE
-    int "Max size of string memory allocation"
-    default 64
-    help
-        The maximum size of a supported string.
-
-config LIBCOAP_MAX_STRINGS
-    int "Max number of strings supported"
-    default 16
-    help
-        The maximum number of supported strings.
+if LIBCOAP_SERVER_SUPPORT
 
 config LIBCOAP_MAX_ENDPOINTS
     int "Max number of endpoints supported"
-    default 4
+    default 4 if LIBCOAP_TCP_SUPPORT
+    default 2
     help
         The maximum number of supported endpoints.
 
@@ -177,6 +200,57 @@ config LIBCOAP_MAX_ATTRIBUTES
     help
         The maximum number of supported resource attributes.
 
+config LIBCOAP_MAX_CACHE_KEYS
+    int "Max number of cache keys supported"
+    default 2
+    help
+        The maximum number of supported cache keys.
+
+config LIBCOAP_MAX_CACHE_ENTRIES
+    int "Max number of cache entries supported"
+    default 2
+    help
+        The maximum number of supported cache entries.
+
+config LIBCOAP_MAX_LG_SRCVS
+    int "Max number of server large receives supported"
+    default 2
+    help
+        The maximum number of supported server large receives.
+
+endif # LIBCOAP_SERVER_SUPPORT
+
+config LIBCOAP_PROXY_SUPPORT
+    bool "Enable Proxy functionality within CoAP"
+    depends on LIBCOAP_CLIENT_SUPPORT && LIBCOAP_SERVER_SUPPORT
+    default n
+    help
+        Enable Proxy functionality (ability to receive requests, pass
+        them to an upstream server and send back responses to client)
+        for CoAP.
+
+        If this option is disabled, redundant CoAP proxy only code is
+        removed.
+
+config LIBCOAP_MAX_LG_XMITS
+    int "Max number of large transmits supported"
+    default 2 if LIBCOAP_SERVER_SUPPORT
+    default 1
+    help
+        The maximum number of supported large transmits.
+
+config LIBCOAP_MAX_STRING_SIZE
+    int "Max size of string memory allocation"
+    default 64
+    help
+        The maximum size of a supported string.
+
+config LIBCOAP_MAX_STRINGS
+    int "Max number of strings supported"
+    default 16
+    help
+        The maximum number of supported strings.
+
 config LIBCOAP_MAX_PACKETS
     int "Max number of packets supported"
     default 4
@@ -185,7 +259,7 @@ config LIBCOAP_MAX_PACKETS
 
 config LIBCOAP_MAX_NODES
     int "Max number of nodes supported"
-    default 16
+    default 4
     help
         The maximum number of supported nodes.
 
@@ -197,7 +271,7 @@ config LIBCOAP_MAX_CONTEXTS
 
 config LIBCOAP_MAX_PDUS
     int "Max number of PDUs supported"
-    default 16
+    default 4
     help
         The maximum number of supported PDUs.
 
@@ -217,7 +291,7 @@ config LIBCOAP_MAX_OPTION_SIZE
     int "Max size of option memory allocation"
     default 16
     help
-        The maximum size of a supported options.
+        The maximum size of a supported option.
 
 config LIBCOAP_MAX_OPTIONS
     int "Max number of options supported"
@@ -225,34 +299,4 @@ config LIBCOAP_MAX_OPTIONS
     help
         The maximum number of supported options.
 
-config LIBCOAP_MAX_CACHE_KEYS
-    int "Max number of cache keys supported"
-    default 2
-    help
-        The maximum number of supported cache keys.
-
-config LIBCOAP_MAX_CACHE_ENTRIES
-    int "Max number of cache entries supported"
-    default 2
-    help
-        The maximum number of supported cache entries.
-
-config LIBCOAP_MAX_LG_CRCVS
-    int "Max number of client large receives supported"
-    default 1
-    help
-        The maximum number of supported client large receives.
-
-config LIBCOAP_MAX_LG_SRCVS
-    int "Max number of server large receives supported"
-    default 2
-    help
-        The maximum number of supported server large receives.
-
-config LIBCOAP_MAX_LG_XMITS
-    int "Max number of large transmits supported"
-    default 2
-    help
-        The maximum number of supported large trqnsmits.
-
-endif # KCONFIG_USEPKG_LIBCOAP
+endmenu # libcoap

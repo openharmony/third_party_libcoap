@@ -6,6 +6,19 @@
 #
 # By default, this script should be run in the examples directory.
 #
+# 3 separate servers are set up, listening on different ports (defaults shown)
+#  Server B with security context B (interop/b_server.conf) on port 5683
+#  Server D with security context D (interop/d_server.conf) on port 5685
+#  Server N with No security context on port 5687
+#
+# The clients are run with security contexts A (interop/a_client.conf) and
+# C (interop/c_client.conf), and where appropriate, modifications to the
+# appropriate base security contexts (called here E (interop/e_client.conf),
+# F (interop/f_client.conf) and G (interop/g_client.conf)).
+#
+# Ports used can be modified (for listening and sending) using
+# the -B, -D and -N options for the respective servers.
+#
 # Run as
 #  ./oscore_testcases.sh [-h remote-target-IP] [-B port-B-OSCORE] \
 #                        [-D port-D-OSCORE] [-N port-NO-OSCORE] \
@@ -24,6 +37,9 @@
 #
 # -N port-N-OSCORE
 #  Port that the server listening on providing no security profile
+#
+# -S
+#  Start up the servers only for the different profiles
 #
 # -s executable-for-interop-server
 #  Exectuable to use for the interop server if not the default of ./oscore-interop-server.
@@ -59,7 +75,7 @@ PARTIAL_LOGS=no
 # Full Logs
 FULL_LOGS=no
 
-while getopts "c:h:s:B:D:FN:P" OPTION; do
+while getopts "c:h:s:B:D:FN:PS" OPTION; do
   case $OPTION in
     c)
       CLIENT="$OPTARG"
@@ -85,11 +101,15 @@ while getopts "c:h:s:B:D:FN:P" OPTION; do
     P)
       PARTIAL_LOGS=yes
       ;;
+    S)
+      SERVERS_ONLY=yes
+      ;;
     *)
       echo Error in options detected
       echo Run as
       echo "$0 [-h remote-target-IP] [-B port-B-OSCORE]"
       echo "      [-D port-D-OSCORE] [-N port-NO-OSCORE]"
+      echo "      [-S]"
       echo "      [-s executable-for-interop-server]"
       echo "      [-c executable-for-client]"
       echo "      [-P] [-F]"
@@ -106,9 +126,9 @@ timecheck () {
 
 NO_PASS=0
 NO_FAIL=0
-# passfail count egrep-expression
+# passfail count grep-expression
 passfail () {
-  PASS=`cat /tmp/client_out | egrep "$2" | wc -l`
+  PASS=`cat /tmp/client_out | grep -E "$2" | wc -l`
   if [ "$PASS" = "$1" ] ; then
     echo Pass
     let "NO_PASS=$NO_PASS+1"
@@ -119,15 +139,25 @@ passfail () {
   if [ "$FULL_LOGS" = yes ] ; then
     cat /tmp/client_out
   elif [ "$PARTIAL_LOGS" = yes ] ; then
-    cat /tmp/client_out | egrep -v " DEBG | OSC  "
+    cat /tmp/client_out | grep -E -v " DEBG | OSC  "
   fi
 }
 
-$SERVER -E $INDIR/interop/b_server.conf -v8 -p $S_PORT_B > /tmp/server_b 2>&1 &
-$SERVER -E $INDIR/interop/d_server.conf -v8 -p $S_PORT_D > /tmp/server_d 2>&1 &
-$SERVER                                 -v8 -p $S_PORT_N > /tmp/server_n 2>&1 &
+if [ "$TARGET_IP" = "127.0.0.1" -o "$SERVERS_ONLY" = yes ]; then
+  killall -9 `basename $SERVER` > /dev/null 2>&1
 
-sleep 1
+  $SERVER -E $INDIR/interop/b_server.conf -v8 -p $S_PORT_B > /tmp/server_b 2>&1 &
+  $SERVER -E $INDIR/interop/d_server.conf -v8 -p $S_PORT_D > /tmp/server_d 2>&1 &
+  $SERVER                                 -v8 -p $S_PORT_N > /tmp/server_n 2>&1 &
+
+  sleep 1
+fi
+
+if [ "$SERVERS_ONLY" = yes ] ; then
+  echo Servers are running, output in /tmp/server_b, /tmp/server_d, and /tmp/server_n
+  ps -ef | grep oscore-interop-server | grep -E -v "grep "
+  exit 0
+fi
 
 # Reset sequence number counters
 rm -f /tmp/client_a
@@ -135,7 +165,7 @@ rm -f /tmp/client_c
 
 # Test 0 General checkout
 echo -n "Test 0 - "
-timecheck 10 $CLIENT -w -v8 coap://$TARGET_IP:$S_PORT_B/oscore/hello/coap 2>&1 | egrep -v " DEBG | OSC  " > /tmp/client_out
+timecheck 10 $CLIENT -w -v8 coap://$TARGET_IP:$S_PORT_B/oscore/hello/coap 2>&1 | grep -E -v " DEBG | OSC  " > /tmp/client_out
 passfail 1 "^Hello World"
 
 # Test 1
@@ -244,9 +274,11 @@ echo -n "Test 17 - "
 timeout 10 $CLIENT -w -v8 coap://$TARGET_IP:$S_PORT_N/oscore/hello/1 > /tmp/client_out 2>&1
 passfail 1 "^4.01 Unauthorized"
 
-KILL_SERVER=`basename $SERVER`
-if [ ! -z "$KILL_SERVER" ] ; then
-  killall $KILL_SERVER
+if [ "$TARGET_IP" = "127.0.0.1" ]; then
+  KILL_SERVER=`basename $SERVER`
+  if [ ! -z "$KILL_SERVER" ] ; then
+    killall $KILL_SERVER
+  fi
 fi
 
 echo

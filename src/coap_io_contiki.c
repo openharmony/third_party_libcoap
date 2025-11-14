@@ -1,7 +1,7 @@
 /* coap_io_contiki.c -- Network I/O functions for libcoap on Contiki-NG
  *
  * Copyright (C) 2012,2014 Olaf Bergmann <bergmann@tzi.org>
- *               2014 chrysn <chrysn@fsfe.org>
+ *               2014      chrysn <chrysn@fsfe.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -14,68 +14,90 @@
  * @brief Contiki-NG-specific functions
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 #include "contiki-net.h"
 
+static void prepare_io(coap_context_t *ctx);
 PROCESS(libcoap_io_process, "libcoap I/O");
-static int was_io_process_stopped;
 
 void
 coap_start_io_process(void) {
-  was_io_process_stopped = 0;
   process_start(&libcoap_io_process, NULL);
 }
 
 void
 coap_stop_io_process(void) {
-  was_io_process_stopped = 1;
-  process_poll(&libcoap_io_process);
+  process_exit(&libcoap_io_process);
 }
 
 static void
-on_prepare_timer_expired(void *ptr) {
-  coap_context_t *ctx;
+on_io_timer_expired(void *ptr) {
+  PROCESS_CONTEXT_BEGIN(&libcoap_io_process);
+  prepare_io((coap_context_t *)ptr);
+  PROCESS_CONTEXT_END(&libcoap_io_process);
+}
+
+void
+coap_update_io_timer(coap_context_t *ctx, coap_tick_t delay) {
+  if (!ctimer_expired(&ctx->io_timer)) {
+    ctimer_stop(&ctx->io_timer);
+  }
+  if (!delay) {
+    process_post(&libcoap_io_process, PROCESS_EVENT_POLL, ctx);
+  } else {
+    ctimer_set(&ctx->io_timer,
+               CLOCK_SECOND * delay / 1000,
+               on_io_timer_expired,
+               ctx);
+  }
+}
+
+static void
+prepare_io(coap_context_t *ctx) {
   coap_tick_t now;
   coap_socket_t *sockets[1];
-  unsigned int max_sockets = sizeof(sockets)/sizeof(sockets[0]);
+  static const unsigned int max_sockets = sizeof(sockets)/sizeof(sockets[0]);
   unsigned int num_sockets;
-  unsigned timeout;
+  unsigned next_io;
 
-  ctx = (coap_context_t *)ptr;
   coap_ticks(&now);
-  timeout = coap_io_prepare_io(ctx, sockets, max_sockets, &num_sockets, now);
-  if (!timeout) {
-    return;
+  next_io = coap_io_prepare_io_lkd(ctx, sockets, max_sockets, &num_sockets, now);
+  if (next_io) {
+    coap_update_io_timer(ctx, next_io);
   }
-  ctimer_set(&ctx->prepare_timer,
-             CLOCK_SECOND * timeout / 1000,
-             on_prepare_timer_expired,
-             ctx);
 }
 
 PROCESS_THREAD(libcoap_io_process, ev, data) {
-  coap_socket_t *coap_socket;
-
+  PROCESS_EXITHANDLER(goto exit);
   PROCESS_BEGIN();
-  while (!was_io_process_stopped) {
+
+  while (1) {
     PROCESS_WAIT_EVENT();
-    if (was_io_process_stopped) {
-      break;
-    }
     if (ev == tcpip_event) {
-      coap_socket = (struct coap_socket_t *)data;
+      coap_socket_t *coap_socket = (coap_socket_t *)data;
       if (!coap_socket) {
-        coap_log_crit("libcoap_io_process: data should never be NULL\n");
+        coap_log_crit("libcoap_io_process: coap_socket should never be NULL\n");
         continue;
       }
       if (uip_newdata()) {
+        coap_tick_t now;
+
         coap_socket->flags |= COAP_SOCKET_CAN_READ;
-        coap_io_process(coap_socket->context, 0);
-        ctimer_stop(&coap_socket->context->prepare_timer);
-        on_prepare_timer_expired(coap_socket->context);
+        coap_ticks(&now);
+        coap_io_do_io_lkd(coap_socket->context, now);
       }
     }
+    if (ev == PROCESS_EVENT_POLL) {
+      coap_context_t *ctx = (coap_context_t *)data;
+      if (!ctx) {
+        coap_log_crit("libcoap_io_process: ctx should never be NULL\n");
+        continue;
+      }
+      prepare_io(ctx);
+    }
   }
+exit:
+  coap_log_info("libcoap_io_process: stopping\n");
   PROCESS_END();
 }
 
@@ -158,7 +180,7 @@ coap_socket_close(coap_socket_t *sock) {
  *         -1 Error error in errno).
  */
 ssize_t
-coap_socket_send(coap_socket_t *sock, const coap_session_t *session, const uint8_t *data,
+coap_socket_send(coap_socket_t *sock, coap_session_t *session, const uint8_t *data,
                  size_t datalen) {
   ssize_t bytes_written = 0;
 
@@ -214,11 +236,83 @@ coap_socket_recv(coap_socket_t *sock, coap_packet_t *packet) {
 }
 
 int
-coap_io_process(coap_context_t *ctx, uint32_t timeout_ms) {
+coap_io_process_lkd(coap_context_t *ctx, uint32_t timeout_ms) {
   coap_tick_t before, now;
 
+  coap_lock_check_locked(ctx);
+  if (timeout_ms != COAP_IO_NO_WAIT) {
+    coap_log_err("coap_io_process_lkd() must be called with COAP_IO_NO_WAIT\n");
+    return -1;
+  }
+
   coap_ticks(&before);
-  coap_io_do_io(ctx, before);
+  PROCESS_CONTEXT_BEGIN(&libcoap_io_process);
+  prepare_io(ctx);
+  coap_io_do_io_lkd(ctx, before);
+  PROCESS_CONTEXT_END(&libcoap_io_process);
   coap_ticks(&now);
   return (int)(((now - before) * 1000) / COAP_TICKS_PER_SECOND);
 }
+
+#if ! COAP_DISABLE_TCP
+
+#if COAP_CLIENT_SUPPORT
+int
+coap_socket_connect_tcp1(coap_socket_t *sock,
+                         const coap_address_t *local_if,
+                         const coap_address_t *server,
+                         int default_port,
+                         coap_address_t *local_addr,
+                         coap_address_t *remote_addr) {
+  (void)sock;
+  (void)local_if;
+  (void)server;
+  (void)default_port;
+  (void)local_addr;
+  (void)remote_addr;
+
+  return -1;
+}
+
+int
+coap_socket_connect_tcp2(coap_socket_t *sock,
+                         coap_address_t *local_addr,
+                         coap_address_t *remote_addr) {
+  (void)sock;
+  (void)local_addr;
+  (void)remote_addr;
+
+  return -1;
+}
+#endif /* COAP_CLIENT_SUPPORT */
+
+#if COAP_SERVER_SUPPORT
+
+int
+coap_socket_bind_tcp(coap_socket_t *sock,
+                     const coap_address_t *listen_addr,
+                     coap_address_t *bound_addr) {
+  (void)sock;
+  (void)listen_addr;
+  (void)bound_addr;
+
+  return -1;
+}
+
+int
+coap_socket_accept_tcp(coap_socket_t *server,
+                       coap_socket_t *new_client,
+                       coap_address_t *local_addr,
+                       coap_address_t *remote_addr,
+                       void *extra) {
+  (void)server;
+  (void)new_client;
+  (void)local_addr;
+  (void)remote_addr;
+  (void)extra;
+
+  return -1;
+}
+#endif /* COAP_SERVER_SUPPORT */
+
+#endif /* ! COAP_DISABLE_TCP */

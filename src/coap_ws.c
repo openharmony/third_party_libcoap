@@ -1,8 +1,8 @@
 /*
  * coap_ws.c -- WebSockets functions for libcoap
  *
- * Copyright (C) 2023 Olaf Bergmann <bergmann@tzi.org>
- * Copyright (C) 2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2023-2024 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2023-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -15,7 +15,7 @@
  * @brief CoAP WebSocket handling functions
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 
 #if COAP_WS_SUPPORT
 #include <stdio.h>
@@ -36,12 +36,7 @@
 
 int
 coap_ws_is_supported(void) {
-#if defined(COAP_WITH_LIBOPENSSL) || defined(COAP_WITH_LIBGNUTLS) || defined(COAP_WITH_LIBMBEDTLS)
-  /* Have SHA1 hash support */
   return coap_tcp_is_supported();
-#else /* !COAP_WITH_LIBOPENSSL && !COAP_WITH_LIBGNUTLS && !COAP_WITH_LIBMBEDTLS */
-  return 0;
-#endif /* !COAP_WITH_LIBOPENSSL && !COAP_WITH_LIBGNUTLS && !COAP_WITH_LIBMBEDTLS */
 }
 
 int
@@ -176,6 +171,8 @@ coap_ws_log_header(const coap_session_t *session, const uint8_t *header) {
   for (i = 0; i < extra_hdr_len; i++) {
     snprintf(&buf[i*3], 4, " %02x", header[i]);
   }
+  coap_log_debug("*  %s: ws: h  recv %4d bytes\n",
+                 coap_session_str(session), extra_hdr_len);
   coap_log_debug("*  %s: WS header:%s\n", coap_session_str(session), buf);
 #endif /* COAP_MAX_LOGGING_LEVEL >= _COAP_LOG_DEBUG */
 }
@@ -206,12 +203,13 @@ coap_ws_write(coap_session_t *session, const uint8_t *data, size_t datalen) {
   uint8_t ws_header[COAP_MAX_FS];
   ssize_t hdr_len = 2;
   ssize_t ret;
+  uint8_t *wdata;
 
   /* If lower layer not yet up, return error */
   if (!session->ws) {
     session->ws = coap_malloc_type(COAP_STRING, sizeof(coap_ws_state_t));
     if (!session->ws) {
-      coap_session_disconnected(session, COAP_NACK_WS_LAYER_FAILED);
+      coap_session_disconnected_lkd(session, COAP_NACK_WS_LAYER_FAILED);
       return -1;
     }
     memset(session->ws, 0, sizeof(coap_ws_state_t));
@@ -248,40 +246,35 @@ coap_ws_write(coap_session_t *session, const uint8_t *data, size_t datalen) {
     /* Need to set the Mask bit, and set the masking key */
     ws_header[1] |= WS_B1_MASK_BIT;
     /* TODO Masking Key and mask provided data */
-    coap_prng(&ws_header[hdr_len], 4);
+    coap_prng_lkd(&ws_header[hdr_len], 4);
     memcpy(session->ws->mask_key, &ws_header[hdr_len], 4);
     hdr_len += 4;
   }
   coap_ws_log_header(session, ws_header);
-  ret = session->sock.lfunc[COAP_LAYER_WS].l_write(session, ws_header, hdr_len);
-  if (ret != hdr_len) {
+  wdata = coap_malloc_type(COAP_STRING, datalen + hdr_len);
+  if (!wdata) {
+    errno = ENOMEM;
     return -1;
   }
+  memcpy(wdata, ws_header, hdr_len);
+  memcpy(&wdata[hdr_len], data, datalen);
   if (session->ws->state == COAP_SESSION_TYPE_CLIENT) {
     /* Need to mask the data */
-    uint8_t *wdata = coap_malloc_type(COAP_STRING, datalen);
-
-    if (!wdata) {
-      errno = ENOMEM;
-      return -1;
-    }
-    session->ws->data_size = datalen;
-    memcpy(wdata, data, datalen);
-    coap_ws_mask_data(session, wdata, datalen);
-    ret = session->sock.lfunc[COAP_LAYER_WS].l_write(session, wdata, datalen);
-    coap_free_type(COAP_STRING, wdata);
-  } else {
-    ret = session->sock.lfunc[COAP_LAYER_WS].l_write(session, data, datalen);
+    coap_ws_mask_data(session, &wdata[hdr_len], datalen);
   }
-  if (ret <= 0) {
+  ret = session->sock.lfunc[COAP_LAYER_WS].l_write(session, wdata, datalen + hdr_len);
+  coap_free_type(COAP_STRING, wdata);
+  if (ret < hdr_len) {
     return ret;
   }
-  if (ret == (ssize_t)datalen)
+  coap_log_debug("*  %s: ws h:  sent %4zd bytes\n",
+                 coap_session_str(session), hdr_len);
+  if (ret == (ssize_t)(datalen + hdr_len))
     coap_log_debug("*  %s: ws:    sent %4zd bytes\n",
-                   coap_session_str(session), ret);
+                   coap_session_str(session), ret - hdr_len);
   else
     coap_log_debug("*  %s: ws:    sent %4zd of %4zd bytes\n",
-                   coap_session_str(session), ret, datalen);
+                   coap_session_str(session), ret, datalen - hdr_len);
   return datalen;
 }
 
@@ -342,7 +335,8 @@ coap_ws_rd_http_header_server(coap_session_t *session) {
       coap_log_debug("WS: Duplicate Connection: header\n");
       return 0;
     }
-    if (strcasecmp(value, "Upgrade") != 0) {
+    if (strcasecmp(value, "Upgrade") != 0 &&
+        strcasecmp(value, "keep-alive, Upgrade") != 0) {
       coap_log_debug("WS: Invalid Connection: header\n");
       return 0;
     }
@@ -586,7 +580,7 @@ coap_ws_read(coap_session_t *session, uint8_t *data, size_t datalen) {
   if (!session->ws) {
     session->ws = coap_malloc_type(COAP_STRING, sizeof(coap_ws_state_t));
     if (!session->ws) {
-      coap_session_disconnected(session, COAP_NACK_WS_LAYER_FAILED);
+      coap_session_disconnected_lkd(session, COAP_NACK_WS_LAYER_FAILED);
       return -1;
     }
     memset(session->ws, 0, sizeof(coap_ws_state_t));
@@ -602,7 +596,7 @@ coap_ws_read(coap_session_t *session, uint8_t *data, size_t datalen) {
         session->sock.lfunc[COAP_LAYER_WS].l_write(session, (uint8_t *)buf,
                                                    strlen(buf));
       }
-      coap_session_disconnected(session, COAP_NACK_WS_LAYER_FAILED);
+      coap_session_disconnected_lkd(session, COAP_NACK_WS_LAYER_FAILED);
       return -1;
     }
 
@@ -620,12 +614,12 @@ coap_ws_read(coap_session_t *session, uint8_t *data, size_t datalen) {
       session->sock.lfunc[COAP_LAYER_WS].l_write(session, (uint8_t *)buf,
                                                  strlen(buf));
 
-      coap_handle_event(session->context, COAP_EVENT_WS_CONNECTED, session);
+      coap_handle_event_lkd(session->context, COAP_EVENT_WS_CONNECTED, session);
       coap_log_debug("WS: established\n");
     } else {
       /* TODO Process the GET response - error on failure */
 
-      coap_handle_event(session->context, COAP_EVENT_WS_CONNECTED, session);
+      coap_handle_event_lkd(session->context, COAP_EVENT_WS_CONNECTED, session);
     }
     session->sock.lfunc[COAP_LAYER_WS].l_establish(session);
     if (session->ws->hdr_ofs == 0)
@@ -702,7 +696,7 @@ coap_ws_read(coap_session_t *session, uint8_t *data, size_t datalen) {
     if ((size_t)bytes_size > datalen) {
       coap_log_err("coap_ws_read: packet size bigger than provided data space"
                    " (%zu > %zu)\n", bytes_size, datalen);
-      coap_handle_event(session->context, COAP_EVENT_WS_PACKET_SIZE, session);
+      coap_handle_event_lkd(session->context, COAP_EVENT_WS_PACKET_SIZE, session);
       session->ws->close_reason = 1009;
       coap_ws_close(session);
       return 0;
@@ -800,7 +794,7 @@ coap_ws_establish(coap_session_t *session) {
   if (!session->ws) {
     session->ws = coap_malloc_type(COAP_STRING, sizeof(coap_ws_state_t));
     if (!session->ws) {
-      coap_session_disconnected(session, COAP_NACK_WS_LAYER_FAILED);
+      coap_session_disconnected_lkd(session, COAP_NACK_WS_LAYER_FAILED);
       return;
     }
     memset(session->ws, 0, sizeof(coap_ws_state_t));
@@ -814,10 +808,10 @@ coap_ws_establish(coap_session_t *session) {
     session->ws->state = COAP_SESSION_TYPE_CLIENT;
     if (!session->ws_host) {
       coap_log_err("WS Host not defined\n");
-      coap_session_disconnected(session, COAP_NACK_WS_LAYER_FAILED);
+      coap_session_disconnected_lkd(session, COAP_NACK_WS_LAYER_FAILED);
       return;
     }
-    coap_prng(session->ws->key, sizeof(session->ws->key));
+    coap_prng_lkd(session->ws->key, sizeof(session->ws->key));
     coap_ws_log_key(session);
     if (!coap_base64_encode_buffer(session->ws->key, sizeof(session->ws->key),
                                    base64, sizeof(base64)))
@@ -859,7 +853,9 @@ coap_ws_close(coap_session_t *session) {
     return;
   }
   if (session->ws && session->ws->up) {
+#if !defined(WITH_LWIP) && !defined(WITH_CONTIKI)
     int count;
+#endif /* ! WITH_LWIP && ! WITH_CONTIKI */
 
     if (!session->ws->sent_close) {
       size_t hdr_len = 2;
@@ -871,7 +867,7 @@ coap_ws_close(coap_session_t *session) {
       if (session->ws->state == COAP_SESSION_TYPE_CLIENT) {
         /* Need to set the Mask bit, and set the masking key */
         ws_header[1] |= WS_B1_MASK_BIT;
-        coap_prng(&ws_header[hdr_len], 4);
+        coap_prng_lkd(&ws_header[hdr_len], 4);
         memcpy(session->ws->mask_key, &ws_header[hdr_len], 4);
         hdr_len += 4;
       }
@@ -893,6 +889,7 @@ coap_ws_close(coap_session_t *session) {
         return;
       }
     }
+#if !defined(WITH_LWIP) && !defined(WITH_CONTIKI)
     count = 5;
     while (!session->ws->recv_close && count > 0 && coap_netif_available(session)) {
       uint8_t buf[100];
@@ -913,7 +910,8 @@ coap_ws_close(coap_session_t *session) {
       }
       count --;
     }
-    coap_handle_event(session->context, COAP_EVENT_WS_CLOSED, session);
+#endif /* ! WITH_LWIP && ! WITH_CONTIKI */
+    coap_handle_event_lkd(session->context, COAP_EVENT_WS_CLOSED, session);
   }
   session->sock.lfunc[COAP_LAYER_WS].l_close(session);
 }

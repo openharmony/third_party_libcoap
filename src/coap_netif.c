@@ -1,7 +1,7 @@
 /*
  * coap_netif.c -- Netif functions for libcoap
  *
- * Copyright (C) 2023 Jon Shallow <supjps-libcoap@jpshallow.com>
+ * Copyright (C) 2023-2024 Jon Shallow <supjps-libcoap@jpshallow.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
@@ -14,7 +14,7 @@
  * @brief CoAP Netif handling functions
  */
 
-#include "coap3/coap_internal.h"
+#include "coap3/coap_libcoap_build.h"
 #include "coap3/coap_session_internal.h"
 
 /*
@@ -82,6 +82,8 @@ coap_netif_dgrm_read(coap_session_t *session, coap_packet_t *packet) {
     errno = keep_errno;
   } else if (bytes_read > 0) {
     coap_ticks(&session->last_rx_tx);
+    memcpy(&session->addr_info, &packet->addr_info,
+           sizeof(session->addr_info));
     coap_log_debug("*  %s: netif: recv %4zd bytes\n",
                    coap_session_str(session), bytes_read);
   }
@@ -167,10 +169,10 @@ coap_netif_strm_listen(coap_endpoint_t *endpoint,
 }
 
 int
-coap_netif_strm_accept(coap_endpoint_t *endpoint, coap_session_t *session) {
+coap_netif_strm_accept(coap_endpoint_t *endpoint, coap_session_t *session, void *extra) {
   if (!coap_socket_accept_tcp(&endpoint->sock, &session->sock,
                               &session->addr_info.local,
-                              &session->addr_info.remote)) {
+                              &session->addr_info.remote, extra)) {
     return 0;
   }
   session->sock.flags |= COAP_SOCKET_NOT_EMPTY | COAP_SOCKET_CONNECTED |
